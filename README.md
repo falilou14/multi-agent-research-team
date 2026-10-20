@@ -15,13 +15,13 @@ Guide de lecture complet (topologies multi-agents, pourquoi un superviseur, pour
 ## Architecture
 
 - **Superviseur** — décide quel agent appeler ensuite (ou de terminer), à partir de l'état courant.
-- **Agent Recherche** — interroge Tavily, renvoie des extraits sourcés (URL + passage).
+- **Agent Recherche** — interroge le web (DuckDuckGo ou Tavily), renvoie des extraits sourcés (URL + passage).
 - **Agent Rédacteur** — synthétise les extraits en rapport structuré avec citations.
 - **Agent Vérificateur** — relit le rapport, détecte toute affirmation non supportée par une source citée ; peut déclencher un retour (recherche ou réécriture), plafonné.
 
 ## Stack
 
-Python, LangGraph, Gemini (API, palier gratuit), Tavily (recherche web agent-native), LangSmith (observabilité), pytest, Ruff, GitHub Actions.
+Python, LangGraph, LangChain (ChatModel + create_agent), Gemini (API, palier gratuit), DuckDuckGo / Tavily (recherche web), LangSmith (observabilité), pytest, Ruff, GitHub Actions.
 
 ## Installation
 
@@ -46,4 +46,11 @@ La CI (GitHub Actions, `.github/workflows/ci.yml`) exécute lint + format check 
 
 ## État
 
-🚧 En cours — fondation (tests/lint/CI) posée, premier agent (Chapitre 1 : Recherche + Tavily) à venir.
+🚧 En cours.
+
+- ✅ Fondation (tests/lint/CI).
+- ✅ Chapitre 1 — Agent Recherche seul : boucle ReAct LangGraph écrite à la main (+ version `create_agent` pour comparaison), plafond de recherches, outil `web_search` à backend interchangeable (DuckDuckGo par défaut, Tavily en option), sources structurées via les *artifacts* d'outil.
+
+```bash
+python -m multi_agent_research_team.research_agent "ta question"
+```

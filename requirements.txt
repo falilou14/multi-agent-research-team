@@ -2,12 +2,20 @@
 # dynamique (Command). Tire langchain-core/langsmith en dépendance légère.
 langgraph
 
-# LLM -- Gemini (palier gratuit), même pattern que le projet précédent.
-google-genai
+# Agents prébuilts (create_agent + middlewares) -- remplace create_react_agent
+# de langgraph.prebuilt, déprécié depuis LangGraph 1.0.
+langchain
+
+# LLM -- Gemini (palier gratuit) via le ChatModel LangChain : nécessaire pour
+# bind_tools / ToolNode / create_agent, et tracé automatiquement par LangSmith.
+langchain-google-genai
 python-dotenv
 pydantic
 
-# Recherche web pensée pour des agents (texte propre + sources, pas du HTML brut).
+# Recherche web -- backend choisi par SEARCH_BACKEND (.env) :
+#  - ddgs (défaut) : DuckDuckGo, gratuit, sans clé ni carte bancaire ;
+#  - tavily : API pensée pour les agents (extraits plus riches), clé requise.
+ddgs
 tavily-python
 
 # Observabilité -- tracing des graphes LangGraph. S'active surtout via des
