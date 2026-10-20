@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "multi-agent-research-team"
+version = "0.1.0"
+description = "Équipe multi-agents (superviseur + Recherche/Rédacteur/Vérificateur) avec LangGraph, Tavily et LangSmith."
+requires-python = ">=3.11"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+# E/F = erreurs pyflakes/pycodestyle de base, I = tri des imports (remplace isort),
+# UP = suggestions de syntaxe moderne (remplace pyupgrade).
+select = ["E", "F", "I", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Marqueur dédié pour séparer explicitement les tests qui appellent de VRAIES
+# API (Tavily/Gemini/LangSmith) -- jamais exécutés automatiquement en CI
+# (coût, quota, flakiness) : `pytest -m "not integration"` en CI, `pytest -m integration`
+# à la main pour une vraie vérification de bout en bout.
+markers = [
+    "integration: tests qui appellent de vraies API externes (non exécutés en CI)",
+]
+
+[tool.coverage.run]
+source = ["src"]

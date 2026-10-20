@@ -1,0 +1,16 @@
+# Orchestration multi-agents -- graphe à états, superviseur avec routage
+# dynamique (Command). Tire langchain-core/langsmith en dépendance légère.
+langgraph
+
+# LLM -- Gemini (palier gratuit), même pattern que le projet précédent.
+google-genai
+python-dotenv
+pydantic
+
+# Recherche web pensée pour des agents (texte propre + sources, pas du HTML brut).
+tavily-python
+
+# Observabilité -- tracing des graphes LangGraph. S'active surtout via des
+# variables d'environnement (LANGCHAIN_TRACING_V2 etc.), le SDK sert pour
+# les cas où on veut logguer explicitement depuis le code.
+langsmith

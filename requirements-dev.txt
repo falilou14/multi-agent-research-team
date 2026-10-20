@@ -1,0 +1,15 @@
+-r requirements.txt
+
+# Installe le package lui-même en mode éditable (src/ layout) -- sans ça,
+# `import multi_agent_research_team` échoue dans les tests/CI.
+-e .
+
+# Tests
+pytest
+pytest-cov
+
+# Lint + formatage (remplace flake8 + isort + black -- un seul outil)
+ruff
+
+# Hooks pré-commit (bloque un commit qui casse le lint avant même le push)
+pre-commit

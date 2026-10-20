@@ -1,0 +1,25 @@
+# Environnements Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Secrets -- jamais commités
+.env
+
+# Tests / couverture
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+
+# Éditeurs / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Build
+*.egg-info/
+dist/
+build/
