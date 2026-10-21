@@ -17,19 +17,22 @@ class FakeToolModel(GenericFakeChatModel):
 
     tools_bound: bool = False
     calls: list[bool] = []
+    # Messages reçus à chaque appel -- pour vérifier ce qu'un agent "voit".
+    inputs: list[list] = []
 
     def bind_tools(self, tools, **kwargs):
-        # Copie superficielle : l'itérateur de réponses et la liste `calls`
-        # sont partagés entre le modèle "nu" et le modèle "avec outils".
+        # Copie superficielle : l'itérateur de réponses et les listes `calls`
+        # / `inputs` sont partagés entre le modèle "nu" et "avec outils".
         return self.model_copy(update={"tools_bound": True})
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
         self.calls.append(self.tools_bound)
+        self.inputs.append(messages)
         return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
 
 
 def fake_model(responses: list[AIMessage]) -> FakeToolModel:
-    return FakeToolModel(messages=iter(responses), calls=[])
+    return FakeToolModel(messages=iter(responses), calls=[], inputs=[])
 
 
 def search_call(query: str, call_id: str) -> AIMessage:
@@ -67,3 +70,9 @@ class FakeDDGS:
         if self.error:
             raise self.error
         return self.results
+
+
+def verdict_call(approved: bool, unsupported_claims: list[str] | None = None) -> AIMessage:
+    """Réponse de Gemini qui "remplit le formulaire" Verdict (structured output via tool call)."""
+    args = {"approved": approved, "unsupported_claims": unsupported_claims or []}
+    return AIMessage(content="", tool_calls=[{"name": "Verdict", "args": args, "id": "v1"}])
