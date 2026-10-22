@@ -22,6 +22,7 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import ToolCallLimitMiddleware
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
 from langgraph.graph import START, MessagesState, StateGraph
 from langgraph.graph.state import CompiledStateGraph
@@ -48,8 +49,15 @@ tu écris doit venir des résultats de recherche. Si une information n'a pas ét
 trouvée, dis-le explicitement."""
 
 
+REFUSAL = (
+    "Limite de recherches atteinte : cette recherche n'a pas été exécutée. "
+    "Conclus avec les informations déjà obtenues."
+)
+
+
 def count_searches(messages: list) -> int:
-    return sum(isinstance(m, ToolMessage) for m in messages)
+    """Recherches réellement exécutées. Les refus (status="error") ne comptent pas."""
+    return sum(isinstance(m, ToolMessage) and m.status != "error" for m in messages)
 
 
 def build_research_agent(
@@ -71,9 +79,34 @@ def build_research_agent(
         # de MessagesState l'ajoute à la liste existante (pas d'écrasement).
         return {"messages": [response]}
 
+    tool_node = ToolNode(tools)
+
+    def tools_within_budget(state: MessagesState, config: RunnableConfig) -> dict[str, Any]:
+        # Le retrait des outils (dans `agent`) ne suffit pas : le plafond y est
+        # vérifié AVANT l'appel, et un seul message peut contenir plusieurs
+        # demandes (appels parallèles) -- vu en réel : 4 recherches pour un
+        # plafond de 3. Ici, on n'exécute que ce qui reste dans le budget.
+        last = state["messages"][-1]
+        remaining = max(0, max_searches - count_searches(state["messages"]))
+        allowed, refused = last.tool_calls[:remaining], last.tool_calls[remaining:]
+
+        # ToolNode ne reçoit qu'une COPIE du message réduite aux demandes
+        # autorisées ; le message original de Gemini reste intact dans l'état.
+        executed = tool_node.invoke(
+            {"messages": [last.model_copy(update={"tool_calls": allowed})]}, config
+        )["messages"]
+        # Chaque demande refusée reçoit quand même une réponse (même
+        # tool_call_id) : l'API du LLM rejette une demande sans réponse, et le
+        # modèle comprend pourquoi il n'a pas de résultat.
+        refusals = [
+            ToolMessage(REFUSAL, tool_call_id=call["id"], name=call["name"], status="error")
+            for call in refused
+        ]
+        return {"messages": [*executed, *refusals]}
+
     graph = StateGraph(MessagesState)
     graph.add_node("agent", agent)
-    graph.add_node("tools", ToolNode(tools))
+    graph.add_node("tools", tools_within_budget)
     graph.add_edge(START, "agent")
     # tools_condition : "tools" si le dernier AIMessage contient des
     # tool_calls, END sinon. C'est LA décision qui fait d'un graphe un agent.

@@ -1,10 +1,11 @@
 import pytest
-from fakes import FakeSearch, fake_model, search_call
-from langchain_core.messages import AIMessage
+from fakes import FakeSearch, fake_model, parallel_search_calls, search_call
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from multi_agent_research_team.research_agent import (
     build_prebuilt_research_agent,
     build_research_agent,
+    count_searches,
     run_research,
 )
 from multi_agent_research_team.tools import make_search_tool
@@ -60,6 +61,30 @@ def test_plafond_atteint_le_modele_est_rappele_sans_outils():
     # 2 appels avec outils liés, puis le 3e SANS -> forcé de conclure.
     assert llm.calls == [True, True, False]
     assert out["notes"] == "conclusion"
+
+
+def test_plafond_strict_meme_avec_des_appels_paralleles():
+    # Le bug vu en réel : à 1 recherche sur 2, le modèle en demande 2 d'un coup.
+    client = FakeSearch()
+    llm = fake_model(
+        [
+            search_call("q1", "c1"),
+            parallel_search_calls(("q2", "c2"), ("q3", "c3")),
+            AIMessage("conclusion"),
+        ]
+    )
+    agent = build_research_agent(llm, [make_search_tool(client)], max_searches=2)
+
+    result = agent.invoke({"messages": [HumanMessage("question ?")]})
+    tool_messages = [m for m in result["messages"] if isinstance(m, ToolMessage)]
+
+    assert client.queries == ["q1", "q2"]  # q3 n'est JAMAIS exécutée
+    assert count_searches(result["messages"]) == 2  # le refus ne compte pas
+    # Chaque demande a sa réponse (sinon l'API du LLM rejette la conversation)...
+    assert [m.tool_call_id for m in tool_messages] == ["c1", "c2", "c3"]
+    # ...et celle de q3 explique le refus au modèle.
+    assert "Limite de recherches atteinte" in tool_messages[2].content
+    assert llm.calls == [True, True, False]
 
 
 def test_le_prebuilt_parcourt_la_meme_boucle():

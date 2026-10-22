@@ -36,9 +36,13 @@ def fake_model(responses: list[AIMessage]) -> FakeToolModel:
 
 
 def search_call(query: str, call_id: str) -> AIMessage:
-    return AIMessage(
-        content="", tool_calls=[{"name": "web_search", "args": {"query": query}, "id": call_id}]
-    )
+    return parallel_search_calls((query, call_id))
+
+
+def parallel_search_calls(*calls: tuple[str, str]) -> AIMessage:
+    """Un seul message qui demande plusieurs recherches d'un coup (appels parallèles)."""
+    tool_calls = [{"name": "web_search", "args": {"query": q}, "id": i} for q, i in calls]
+    return AIMessage(content="", tool_calls=tool_calls)
 
 
 class FakeSearch:
