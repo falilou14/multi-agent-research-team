@@ -100,8 +100,13 @@ def make_writer_node(llm: BaseChatModel):
                 HumanMessage(
                     f"{task}\n\nTon rapport précédent :\n{state['report']}\n\n"
                     f"Le Vérificateur l'a rejeté. Affirmations non appuyées :\n{complaints}\n\n"
-                    "Réécris le rapport : corrige chacune de ces affirmations pour qu'elle "
-                    "colle exactement à ses sources, ou supprime-la. Ne change pas le reste."
+                    # Les notes peuvent elles-mêmes être fausses (vu en trace,
+                    # Ch.4 : un fait attribué par la Recherche à une source qui
+                    # ne le dit pas). Sans cette précision, le Rédacteur
+                    # obéissait à "utilise les notes" et gardait la phrase.
+                    "Le Vérificateur a lu le texte complet des sources : son avis prime sur "
+                    "les notes, qui peuvent contenir des erreurs. Supprime chacune de ces "
+                    "affirmations, même si elle figure dans les notes. Ne change pas le reste."
                 ),
             ]
         )

@@ -181,6 +181,9 @@ def test_reecriture_recoit_les_reproches_efface_le_verdict_et_compte():
     seen = llm.inputs[0][-1].content
     assert "rapport v1" in seen  # son ancien rapport
     assert "affirmation fausse" in seen  # les reproches du Vérificateur
+    # Lève la contradiction vue en trace (Ch.4) : "utilise les notes" vs
+    # "cette phrase des notes n'est pas appuyée" -> le Rédacteur gardait la phrase.
+    assert "même si elle figure dans les notes" in seen
 
 
 def run_team(team_responses):
