@@ -32,4 +32,8 @@ class TeamState(TypedDict):
     notes: NotRequired[str]  # écrit par : Recherche
     sources: NotRequired[list[dict[str, Any]]]  # écrit par : Recherche (artifacts)
     report: NotRequired[str]  # écrit par : Rédacteur
-    verdict: NotRequired[Verdict]  # écrit par : Vérificateur
+    # écrit par : Vérificateur ; remis à None par le Rédacteur quand il
+    # réécrit -- un verdict sur l'ANCIEN rapport est périmé et doit
+    # disparaître, sinon le nouveau rapport ne serait jamais vérifié.
+    verdict: NotRequired[Verdict | None]
+    revisions: NotRequired[int]  # écrit par : Rédacteur (nombre de réécritures faites)

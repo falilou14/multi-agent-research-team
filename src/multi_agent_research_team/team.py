@@ -42,6 +42,10 @@ appuyée si sa source ne la mentionne pas, la contredit, ou ne dit qu'une partie
 Approuve le rapport uniquement si TOUTES les affirmations sont appuyées. Sinon,
 liste chaque affirmation non appuyée, recopiée telle qu'elle apparaît dans le rapport."""
 
+# Nombre maximal de réécritures après un rejet du Vérificateur (budget de la
+# boucle de correction, distinct du plafond de recherches de l'agent Recherche).
+MAX_REVISIONS = 2
+
 # Une URL s'arrête au premier espace, crochet, parenthèse, virgule ou guillemet.
 _URL_RE = re.compile(r"https?://[^\s\[\]()<>,\"']+")
 
@@ -69,13 +73,34 @@ def make_writer_node(llm: BaseChatModel):
     """
 
     def writer(state: TeamState) -> dict[str, Any]:
+        task = f"Question : {state['question']}\n\nNotes :\n{state['notes']}"
+        verdict = state.get("verdict")
+
+        if verdict is None:  # première rédaction
+            response = llm.invoke([SystemMessage(WRITER_PROMPT), HumanMessage(task)])
+            return {"report": response.text, "revisions": 0}  # écrit : report, revisions
+
+        # Réécriture après un rejet : il reçoit son ancien rapport + les
+        # reproches précis du Vérificateur, pour corriger uniquement ça.
+        complaints = "\n".join(f"- {claim}" for claim in verdict.unsupported_claims)
         response = llm.invoke(
             [
                 SystemMessage(WRITER_PROMPT),
-                HumanMessage(f"Question : {state['question']}\n\nNotes :\n{state['notes']}"),
+                HumanMessage(
+                    f"{task}\n\nTon rapport précédent :\n{state['report']}\n\n"
+                    f"Le Vérificateur l'a rejeté. Affirmations non appuyées :\n{complaints}\n\n"
+                    "Réécris le rapport : corrige chacune de ces affirmations pour qu'elle "
+                    "colle exactement à ses sources, ou supprime-la. Ne change pas le reste."
+                ),
             ]
         )
-        return {"report": response.text}  # écrit : report
+        return {
+            "report": response.text,
+            # Le verdict portait sur l'ANCIEN rapport : on l'efface pour que
+            # le superviseur renvoie le nouveau au Vérificateur.
+            "verdict": None,
+            "revisions": state.get("revisions", 0) + 1,
+        }
 
     return writer
 
@@ -133,14 +158,23 @@ def route(state: TeamState) -> str:
     Le superviseur (option A : des règles en code, pas un LLM). L'ordre est
     connu d'avance, donc un `if` décide gratuitement et sans erreur ; un
     superviseur LLM paierait un appel par étape pour la même décision.
-    Il regarde quels onglets du dossier sont déjà remplis.
+    Il regarde quels onglets du dossier sont déjà remplis, puis le verdict.
     """
     if "notes" not in state:
         return "research"
     if "report" not in state:
         return "writer"
-    if "verdict" not in state:
+    verdict = state.get("verdict")
+    if verdict is None:  # jamais vérifié, ou verdict effacé par une réécriture
         return "verifier"
+    if verdict.approved:
+        return END
+    # Rejeté : on renvoie au Rédacteur tant qu'il reste du budget. Sans ce
+    # plafond, un Vérificateur jamais satisfait ferait boucler à l'infini.
+    if state.get("revisions", 0) < MAX_REVISIONS:
+        return "writer"
+    # Budget épuisé : on livre le rapport AVEC son verdict négatif, plutôt
+    # que de le cacher -- l'utilisateur sait qu'il n'est pas fiable.
     return END
 
 
@@ -191,7 +225,8 @@ def main() -> None:
 
     print(f"\n=== Rapport ===\n{final['report']}")
     verdict = final["verdict"]
-    print(f"\n=== Verdict : {'APPROUVÉ' if verdict.approved else 'REJETÉ'} ===")
+    status = "APPROUVÉ" if verdict.approved else "REJETÉ"
+    print(f"\n=== Verdict : {status} (après {final['revisions']} correction(s)) ===")
     for claim in verdict.unsupported_claims:
         print(f"- {claim}")
 
