@@ -7,6 +7,7 @@ dossier partagé (`TeamState`).
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
 
@@ -17,6 +18,8 @@ from langgraph.graph.state import CompiledStateGraph
 
 from multi_agent_research_team.research_agent import run_research
 from multi_agent_research_team.state import TeamState, Verdict
+
+logger = logging.getLogger(__name__)
 
 WRITER_PROMPT = """Tu es le Rédacteur d'une équipe de recherche.
 À partir des notes de recherche fournies, rédige un rapport clair et structuré qui
@@ -150,12 +153,23 @@ def make_verifier_node(llm: BaseChatModel):
         cited_sources = "\n\n---\n\n".join(
             f"URL: {s['url']}\n{s['content']}" for s in sources if s["url"] in cited
         )
-        verdict = judge.invoke(
-            [
-                SystemMessage(VERIFIER_PROMPT),
-                HumanMessage(f"Rapport :\n{report}\n\nSources citées :\n{cited_sources}"),
-            ]
-        )
+        try:
+            verdict = judge.invoke(
+                [
+                    SystemMessage(VERIFIER_PROMPT),
+                    HumanMessage(f"Rapport :\n{report}\n\nSources citées :\n{cited_sources}"),
+                ]
+            )
+        except Exception as exc:
+            # Panne du LLM (vu en trace LangSmith : 2 x 30 s puis 504 au 3e
+            # passage, et 4 min de travail perdues dans le plantage). On livre
+            # le rapport NON VÉRIFIÉ plutôt que de tout perdre -- statut
+            # distinct de "rejeté" : rien n'a été lu, donc aucun reproche.
+            logger.warning("verifier: vérification impossible: %r", exc)
+            return {
+                "verdict": Verdict(approved=False, unsupported_claims=[]),
+                "verification_error": f"{type(exc).__name__}: {exc}",
+            }
         return {"verdict": verdict}  # écrit : verdict
 
     return verifier
@@ -176,6 +190,10 @@ def route(state: TeamState) -> str:
     if verdict is None:  # jamais vérifié, ou verdict effacé par une réécriture
         return "verifier"
     if verdict.approved:
+        return END
+    # Panne de vérification : réécrire ne corrigerait rien -> on s'arrête et
+    # on livre le rapport marqué "non vérifié".
+    if state.get("verification_error"):
         return END
     # Rejeté : on renvoie au Rédacteur tant qu'il reste du budget. Sans ce
     # plafond, un Vérificateur jamais satisfait ferait boucler à l'infini.
@@ -207,7 +225,6 @@ def build_team(research_agent: CompiledStateGraph, llm: BaseChatModel) -> Compil
 
 
 def main() -> None:
-    import logging
     import sys
 
     from multi_agent_research_team.llm import get_llm
@@ -236,7 +253,10 @@ def main() -> None:
 
     print(f"\n=== Rapport ===\n{final['report']}")
     verdict = final["verdict"]
-    status = "APPROUVÉ" if verdict.approved else "REJETÉ"
+    if final.get("verification_error"):
+        status = f"⚠️ NON VÉRIFIÉ -- vérification impossible ({final['verification_error'][:80]})"
+    else:
+        status = "APPROUVÉ" if verdict.approved else "REJETÉ"
     print(f"\n=== Verdict : {status} (après {final['revisions']} correction(s)) ===")
     for claim in verdict.unsupported_claims:
         print(f"- {claim}")

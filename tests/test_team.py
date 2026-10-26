@@ -1,4 +1,4 @@
-from fakes import FakeSearch, fake_model, search_call, verdict_call
+from fakes import BrokenModel, FakeSearch, fake_model, search_call, verdict_call
 from langchain_core.messages import AIMessage
 
 from multi_agent_research_team.research_agent import build_research_agent
@@ -244,3 +244,26 @@ def test_filet_global_arrete_un_superviseur_bugge(monkeypatch):
         team.invoke(dossier(notes="n", sources=[]))
     # Arrêté par le filet après ~RECURSION_LIMIT étapes, pas 10 007.
     assert len(llm.calls) <= team_module.RECURSION_LIMIT
+
+
+def test_verificateur_en_panne_livre_un_rapport_non_verifie_sans_planter():
+    verifier = make_verifier_node(BrokenModel(TimeoutError("504 DEADLINE_EXCEEDED")))
+
+    update = verifier({"report": "Fait [https://a.com]", "sources": SOURCES})
+
+    assert "TimeoutError" in update["verification_error"]
+    # Un verdict est quand même écrit (sinon le superviseur rappellerait le
+    # Vérificateur en boucle), mais SANS reproches : rien n'a été vérifié.
+    assert update["verdict"] == Verdict(approved=False, unsupported_claims=[])
+
+
+def test_route_une_panne_de_verification_termine_sans_reecrire():
+    from langgraph.graph import END
+
+    from multi_agent_research_team.team import route
+
+    state = dossier(notes="n", sources=[], report="r", verdict=Verdict(approved=False),
+                    revisions=0, verification_error="TimeoutError: 504")  # fmt: skip
+
+    # Il reste du budget, mais réécrire ne corrigerait pas une panne réseau.
+    assert route(state) == END

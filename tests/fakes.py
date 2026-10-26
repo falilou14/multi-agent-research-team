@@ -80,3 +80,16 @@ def verdict_call(approved: bool, unsupported_claims: list[str] | None = None) ->
     """Réponse de Gemini qui "remplit le formulaire" Verdict (structured output via tool call)."""
     args = {"approved": approved, "unsupported_claims": unsupported_claims or []}
     return AIMessage(content="", tool_calls=[{"name": "Verdict", "args": args, "id": "v1"}])
+
+
+class BrokenModel:
+    """Un Gemini en panne : tout appel lève l'erreur donnée (ex. timeout 504)."""
+
+    def __init__(self, error: Exception):
+        self.error = error
+
+    def with_structured_output(self, schema):
+        return self
+
+    def invoke(self, messages, *args, **kwargs):
+        raise self.error

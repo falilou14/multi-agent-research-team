@@ -37,3 +37,6 @@ class TeamState(TypedDict):
     # disparaître, sinon le nouveau rapport ne serait jamais vérifié.
     verdict: NotRequired[Verdict | None]
     revisions: NotRequired[int]  # écrit par : Rédacteur (nombre de réécritures faites)
+    # écrit par : Vérificateur, seulement si le LLM-juge est en panne. Distinct
+    # d'un rejet : le rapport n'a pas été lu, il est livré "non vérifié".
+    verification_error: NotRequired[str]
