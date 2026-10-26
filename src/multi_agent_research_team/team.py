@@ -46,6 +46,14 @@ liste chaque affirmation non appuyée, recopiée telle qu'elle apparaît dans le
 # boucle de correction, distinct du plafond de recherches de l'agent Recherche).
 MAX_REVISIONS = 2
 
+# Filet de sécurité ULTIME sur le grand graphe, pas une logique métier (ce
+# sont MAX_REVISIONS et le plafond de recherches qui bornent les boucles
+# normales). Le pire cas normal fait 15 étapes (superviseur compris) ; au-delà
+# de 30, c'est forcément un bug de routage : mieux vaut lever une
+# GraphRecursionError tout de suite que tourner jusqu'au défaut de LangGraph
+# (10 007 étapes) en consommant du quota LLM à chaque tour.
+RECURSION_LIMIT = 30
+
 # Une URL s'arrête au premier espace, crochet, parenthèse, virgule ou guillemet.
 _URL_RE = re.compile(r"https?://[^\s\[\]()<>,\"']+")
 
@@ -195,7 +203,7 @@ def build_team(research_agent: CompiledStateGraph, llm: BaseChatModel) -> Compil
     # Topologie en étoile : chaque agent rend la main au superviseur.
     for agent in ("research", "writer", "verifier"):
         graph.add_edge(agent, "supervisor")
-    return graph.compile()
+    return graph.compile().with_config(recursion_limit=RECURSION_LIMIT)
 
 
 def main() -> None:

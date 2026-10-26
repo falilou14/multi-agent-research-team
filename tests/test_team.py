@@ -225,3 +225,22 @@ def test_boucle_toujours_rejete_s_arrete_au_budget_avec_verdict_negatif():
     # Le rapport livré est le dernier, avec SON verdict (pas un verdict périmé).
     assert final["report"] == f"v{MAX_REVISIONS + 1} [https://a.com]"
     assert final["verdict"].approved is False
+
+
+def test_filet_global_arrete_un_superviseur_bugge(monkeypatch):
+    import itertools
+
+    import pytest
+    from langgraph.errors import GraphRecursionError
+
+    from multi_agent_research_team import team as team_module
+
+    # Bug simulé : un superviseur qui renvoie TOUJOURS au Rédacteur.
+    monkeypatch.setattr(team_module, "route", lambda state: "writer")
+    llm = fake_model(itertools.repeat(AIMessage("rapport")))  # réponses infinies
+    team = team_module.build_team(build_research_agent(llm, []), llm)
+
+    with pytest.raises(GraphRecursionError):
+        team.invoke(dossier(notes="n", sources=[]))
+    # Arrêté par le filet après ~RECURSION_LIMIT étapes, pas 10 007.
+    assert len(llm.calls) <= team_module.RECURSION_LIMIT
