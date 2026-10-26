@@ -26,14 +26,20 @@ def get_llm(model: str = DEFAULT_MODEL, temperature: float = 0.0) -> ChatGoogleG
             "GEMINI_API_KEY manquant -- copie .env.example vers .env et "
             "renseigne ta clé (gratuite sur https://aistudio.google.com/apikey)."
         )
-    # Même garde-fou réseau que dans le projet assurance : sur le palier
-    # gratuit, un 503 (surcharge côté Google) peut sinon bloquer un appel
-    # plusieurs minutes à cause des retries/backoff par défaut. On borne :
-    # 20s par tentative, 1 seul retry -- l'agent échoue vite et proprement.
+    # Garde-fou réseau : par défaut (6 tentatives, backoff, pas de délai par
+    # tentative), un 503 du palier gratuit peut bloquer un appel plusieurs
+    # minutes. On borne explicitement.
+    #
+    # ATTENTION au nom trompeur : `max_retries` est transmis au SDK Google
+    # comme un nombre TOTAL de tentatives (max_retries=1 = aucun nouvel
+    # essai). Révélé par une trace LangSmith (Ch.4) : un seul appel de 20,2 s
+    # avant "504 DEADLINE_EXCEEDED", soit notre propre timeout de 20 s.
+    # Réglage retenu : 30 s par tentative, 2 tentatives -> une lenteur
+    # passagère est absorbée, et ~1 min au pire avant une erreur claire.
     return ChatGoogleGenerativeAI(
         model=model,
         google_api_key=api_key,
         temperature=temperature,
-        timeout=20,
-        max_retries=1,
+        timeout=30,
+        max_retries=2,
     )

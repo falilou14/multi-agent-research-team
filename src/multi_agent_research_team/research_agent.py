@@ -112,7 +112,9 @@ def build_research_agent(
     # tool_calls, END sinon. C'est LA décision qui fait d'un graphe un agent.
     graph.add_conditional_edges("agent", tools_condition)
     graph.add_edge("tools", "agent")
-    return graph.compile()
+    # run_name : nom affiché dans les traces LangSmith (sinon "LangGraph",
+    # identique pour le grand graphe et ce sous-graphe -- illisible).
+    return graph.compile().with_config(run_name="research_agent")
 
 
 def build_prebuilt_research_agent(

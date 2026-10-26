@@ -203,7 +203,7 @@ def build_team(research_agent: CompiledStateGraph, llm: BaseChatModel) -> Compil
     # Topologie en étoile : chaque agent rend la main au superviseur.
     for agent in ("research", "writer", "verifier"):
         graph.add_edge(agent, "supervisor")
-    return graph.compile().with_config(recursion_limit=RECURSION_LIMIT)
+    return graph.compile().with_config(recursion_limit=RECURSION_LIMIT, run_name="research_team")
 
 
 def main() -> None:
@@ -226,7 +226,10 @@ def main() -> None:
 
     # stream_mode="updates" : un événement par nœud exécuté -> la trajectoire.
     final: dict[str, Any] = {"question": question}
-    for step in team.stream({"question": question}, stream_mode="updates"):
+    # metadata : attachées à la trace LangSmith, filtrables dans l'interface
+    # (ex. comparer les exécutions par modèle).
+    config = {"metadata": {"model": llm.model, "question": question}}
+    for step in team.stream({"question": question}, config, stream_mode="updates"):
         for node, update in step.items():
             print(f"--> {node}")
             final.update(update or {})
