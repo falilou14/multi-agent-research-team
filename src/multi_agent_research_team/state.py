@@ -31,6 +31,7 @@ class TeamState(TypedDict):
     # travail. C'est justement leur présence/absence que lit le superviseur.
     notes: NotRequired[str]  # écrit par : Recherche
     sources: NotRequired[list[dict[str, Any]]]  # écrit par : Recherche (artifacts)
+    searches: NotRequired[int]  # écrit par : Recherche (recherches exécutées, pour l'évaluation)
     report: NotRequired[str]  # écrit par : Rédacteur
     # écrit par : Vérificateur ; remis à None par le Rédacteur quand il
     # réécrit -- un verdict sur l'ANCIEN rapport est périmé et doit

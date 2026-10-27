@@ -71,7 +71,8 @@ def make_research_node(research_agent: CompiledStateGraph):
 
     def research(state: TeamState) -> dict[str, Any]:
         out = run_research(state["question"], research_agent)  # lit : question
-        return {"notes": out["notes"], "sources": out["sources"]}  # écrit : notes, sources
+        # écrit : notes, sources, searches (ce dernier pour la mesure : Ch.5)
+        return {"notes": out["notes"], "sources": out["sources"], "searches": out["searches"]}
 
     return research
 

@@ -22,7 +22,7 @@ def test_le_noeud_recherche_ne_verse_au_dossier_que_notes_et_sources():
     update = research({"question": "question ?"})
 
     # Ni messages, ni tool calls : seulement le produit fini.
-    assert update == {"notes": "- fait A [https://a.com]", "sources": [SRC_A]}
+    assert update == {"notes": "- fait A [https://a.com]", "sources": [SRC_A], "searches": 1}
 
 
 def test_le_redacteur_ne_voit_que_question_et_notes_et_ecrit_le_rapport():
