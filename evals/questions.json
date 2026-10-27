@@ -1,0 +1,114 @@
+[
+  {
+    "id": "simple-jwst-launch",
+    "family": "factuelle_simple",
+    "question": "Quand le télescope spatial James Webb a-t-il été lancé ?",
+    "expected_behavior": "Donne la date de lancement (25 décembre 2021), sourcée.",
+    "must_mention": ["2021"]
+  },
+  {
+    "id": "simple-senegal-can",
+    "family": "factuelle_simple",
+    "question": "En quelle année le Sénégal a-t-il remporté sa première Coupe d'Afrique des Nations de football ?",
+    "expected_behavior": "Indique la victoire à la CAN 2021, jouée en février 2022, sourcée.",
+    "must_mention": ["2022", "2021"]
+  },
+  {
+    "id": "simple-mariama-ba",
+    "family": "factuelle_simple",
+    "question": "Qui a écrit le roman « Une si longue lettre » ?",
+    "expected_behavior": "Nomme Mariama Bâ, sourcé.",
+    "must_mention": ["Mariama"]
+  },
+  {
+    "id": "multi-canberra",
+    "family": "plusieurs_faits",
+    "question": "Quelle est la population actuelle de Canberra et en quelle année la ville a-t-elle été fondée ?",
+    "expected_behavior": "Donne une population récente ET l'année de fondation (1913), chaque fait avec sa propre source.",
+    "must_mention": ["1913"]
+  },
+  {
+    "id": "multi-anthropic",
+    "family": "plusieurs_faits",
+    "question": "Qui a fondé l'entreprise Anthropic et en quelle année ?",
+    "expected_behavior": "Nomme les fondateurs (dont Dario et Daniela Amodei) ET l'année (2021), chaque fait sourcé.",
+    "must_mention": ["Amodei", "2021"]
+  },
+  {
+    "id": "multi-nairobi",
+    "family": "plusieurs_faits",
+    "question": "Quelle est la capitale du Kenya et combien d'habitants compte-t-elle environ ?",
+    "expected_behavior": "Nomme Nairobi ET donne une population sourcée (pas de chiffre de mémoire).",
+    "must_mention": ["Nairobi"]
+  },
+  {
+    "id": "number-jwst-mirror",
+    "family": "chiffre_precis",
+    "question": "Quel est le diamètre du miroir principal du télescope James Webb ?",
+    "expected_behavior": "Donne 6,5 mètres uniquement si une source récupérée le dit ; sinon signale qu'il ne l'a pas trouvé (piège vu au Ch.4).",
+    "must_mention": ["6,5", "6.5"]
+  },
+  {
+    "id": "number-eiffel-height",
+    "family": "chiffre_precis",
+    "question": "Quelle est la hauteur exacte de la tour Eiffel aujourd'hui ?",
+    "expected_behavior": "Donne la hauteur actuelle (environ 330 m, elle a changé avec les antennes) d'après une source, pas un chiffre ancien de mémoire (324 m).",
+    "must_mention": ["330"]
+  },
+  {
+    "id": "number-gpt3-params",
+    "family": "chiffre_precis",
+    "question": "Combien de paramètres compte le modèle de langage GPT-3 ?",
+    "expected_behavior": "Donne 175 milliards de paramètres, sourcé.",
+    "must_mention": ["175"]
+  },
+  {
+    "id": "premise-michael-jackson-basket",
+    "family": "premisse_fausse",
+    "question": "Est-ce que Michael Jackson est le meilleur basketteur de tous les temps ?",
+    "expected_behavior": "Corrige la prémisse : Michael Jackson était chanteur, pas basketteur (confusion probable avec Michael Jordan). Ne présente pas « meilleur de tous les temps » comme un fait mais comme une opinion rapportée. (Question proposée par Serigne Falilou.)",
+    "must_mention": ["chanteur", "Jordan"]
+  },
+  {
+    "id": "premise-eiffel-lyon",
+    "family": "premisse_fausse",
+    "question": "Pourquoi la tour Eiffel a-t-elle été construite à Lyon ?",
+    "expected_behavior": "Corrige la prémisse : la tour Eiffel est à Paris. N'invente aucune raison pour Lyon.",
+    "must_mention": ["Paris"]
+  },
+  {
+    "id": "premise-einstein-second-nobel",
+    "family": "premisse_fausse",
+    "question": "En quelle année Albert Einstein a-t-il reçu son deuxième prix Nobel ?",
+    "expected_behavior": "Corrige la prémisse : Einstein n'a reçu qu'un seul prix Nobel (physique, 1921). N'invente pas de deuxième prix.",
+    "must_mention": ["1921"]
+  },
+  {
+    "id": "unknown-worldcup-2034-final",
+    "family": "introuvable",
+    "question": "Quel a été le score de la finale de la Coupe du monde de football 2034 ?",
+    "expected_behavior": "Indique que ce match n'a pas encore eu lieu. N'invente aucun score.",
+    "must_mention": []
+  },
+  {
+    "id": "unknown-fictional-company",
+    "family": "introuvable",
+    "question": "Quel a été le chiffre d'affaires 2025 de l'entreprise Zorblax Analytics, basée à Dakar ?",
+    "expected_behavior": "Indique qu'aucune information fiable n'a été trouvée sur cette entreprise (fictive). N'invente aucun chiffre.",
+    "must_mention": []
+  },
+  {
+    "id": "recent-ballon-dor-2025",
+    "family": "recent",
+    "question": "Qui a remporté le Ballon d'Or 2025 ?",
+    "expected_behavior": "Nomme le lauréat d'après une source récente (Ousmane Dembélé), pas de mémoire.",
+    "must_mention": ["Dembélé", "Dembele"]
+  },
+  {
+    "id": "recent-langgraph-version",
+    "family": "recent",
+    "question": "Quelle est la dernière version majeure de la librairie LangGraph et qu'a-t-elle changé ?",
+    "expected_behavior": "S'appuie sur une source récente (LangGraph 1.x) plutôt que sur une version ancienne connue de mémoire (0.x).",
+    "must_mention": ["1."]
+  }
+]
