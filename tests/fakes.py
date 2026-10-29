@@ -82,6 +82,12 @@ def verdict_call(approved: bool, unsupported_claims: list[str] | None = None) ->
     return AIMessage(content="", tool_calls=[{"name": "Verdict", "args": args, "id": "v1"}])
 
 
+def judgement_call(passed: bool, reason: str = "") -> AIMessage:
+    """Réponse du juge d'évaluation qui remplit le formulaire Judgement."""
+    args = {"reason": reason, "passed": passed}
+    return AIMessage(content="", tool_calls=[{"name": "Judgement", "args": args, "id": "j1"}])
+
+
 class BrokenModel:
     """Un Gemini en panne : tout appel lève l'erreur donnée (ex. timeout 504)."""
 

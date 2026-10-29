@@ -1,7 +1,12 @@
-from fakes import FakeSearch, fake_model, search_call, verdict_call
+from fakes import BrokenModel, FakeSearch, fake_model, judgement_call, search_call, verdict_call
 from langchain_core.messages import AIMessage
 
-from multi_agent_research_team.evaluation import load_cases, mentions_ok, run_case
+from multi_agent_research_team.evaluation import (
+    load_cases,
+    make_eval_judge,
+    mentions_ok,
+    run_case,
+)
 from multi_agent_research_team.research_agent import build_research_agent
 from multi_agent_research_team.team import build_team
 from multi_agent_research_team.tools import make_search_tool
@@ -53,6 +58,45 @@ def test_run_case_un_plantage_est_un_resultat_pas_une_exception():
 
     assert result["crashed"] is True
     assert result["error"]
+
+
+MJ_CASE = {
+    "id": "premise-michael-jackson-basket",
+    "family": "premisse_fausse",
+    "question": "Michael Jackson est-il le meilleur basketteur ?",
+    "expected_behavior": "Corrige la prémisse : chanteur, pas basketteur.",
+    "must_mention": ["chanteur", "Jordan"],
+}
+
+
+def test_les_mots_attendus_ne_suffisent_pas_le_juge_tranche():
+    # Piège proposé par Serigne Falilou : les bons mots, un sens faux.
+    report = "Le chanteur Michael Jordan est le meilleur basketteur."
+    llm = fake_model([judgement_call(False, "Fusionne les deux personnes.")])
+
+    judgement = make_eval_judge(llm)(MJ_CASE, report)
+
+    assert mentions_ok(report, MJ_CASE["must_mention"]) is True
+    assert judgement.passed is False
+    # Le juge voit le comportement attendu ET le rapport, jamais les sources.
+    seen = llm.inputs[0][1].content
+    assert MJ_CASE["expected_behavior"] in seen and report in seen
+
+
+def test_juge_en_panne_donne_non_juge():
+    judge = make_eval_judge(BrokenModel(TimeoutError("504")))
+
+    assert judge(MJ_CASE, "rapport") is None
+
+
+def test_run_case_enregistre_le_verdict_du_juge():
+    team = make_team([AIMessage("Un seul Nobel, en 1921 [https://a.com]"), verdict_call(True)])
+    judge = make_eval_judge(fake_model([judgement_call(True, "Prémisse corrigée.")]))
+
+    result = run_case(team, CASE, judge)
+
+    assert result["judge_passed"] is True
+    assert result["judge_reason"] == "Prémisse corrigée."
 
 
 def test_le_jeu_reel_se_charge():
