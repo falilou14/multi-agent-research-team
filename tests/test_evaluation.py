@@ -3,6 +3,7 @@ from langchain_core.messages import AIMessage
 
 from multi_agent_research_team.evaluation import (
     aggregate,
+    is_quota_exhausted,
     load_cases,
     make_eval_judge,
     mentions_ok,
@@ -140,3 +141,8 @@ def test_le_jeu_reel_se_charge():
 
     assert len(cases) == 16
     assert any(c["id"] == "premise-michael-jackson-basket" for c in cases)
+
+
+def test_quota_epuise_se_distingue_des_pannes_passageres():
+    assert is_quota_exhausted("GoogleRateLimitError: 429 RESOURCE_EXHAUSTED. quota")
+    assert not is_quota_exhausted("GoogleAPIError: 503 UNAVAILABLE. high demand")

@@ -13,6 +13,7 @@ modèles ; le harnais mesure le COMPORTEMENT du système réel, en taux.
 
 from __future__ import annotations
 
+import itertools
 import json
 import logging
 import time
@@ -123,7 +124,8 @@ def run_case(
             "id": case["id"],
             "family": case["family"],
             "crashed": True,
-            "error": f"{type(exc).__name__}: {exc}"[:300],
+            # 1000 caractères : à 300, le détail des erreurs de quota était coupé.
+            "error": f"{type(exc).__name__}: {exc}"[:1000],
             "duration_s": round(time.monotonic() - start, 1),
         }
 
@@ -152,6 +154,12 @@ def run_case(
         "report": report,
         "unsupported_claims": state["verdict"].unsupported_claims if state.get("verdict") else [],
     }
+
+
+def is_quota_exhausted(error: str) -> bool:
+    # 429 RESOURCE_EXHAUSTED : quota de l'API dépassé (≠ 503/504, pannes
+    # passagères qui, elles, peuvent se résorber à la question suivante).
+    return "RESOURCE_EXHAUSTED" in error
 
 
 def _ratio(values: list[bool | None]) -> tuple[int, int]:
@@ -245,17 +253,23 @@ def main() -> None:
     out.parent.mkdir(exist_ok=True)
     results = []
     total = len(cases) * args.runs
-    for i in range(args.runs):
-        for case in cases:
-            result = run_case(team, case, judge)
-            result["run"] = i
-            results.append(result)
-            # Écrit tout de suite : une interruption ne perd que la fiche en cours.
-            with out.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(result, ensure_ascii=False) + "\n")
-            status = "PLANTÉ" if result["crashed"] else result["status"]
-            judged = result.get("judge_passed")
-            print(f"[{len(results)}/{total}] {case['id']}: {status}, juge={judged}")
+    for i, case in itertools.product(range(args.runs), cases):
+        result = run_case(team, case, judge)
+        if result["crashed"] and is_quota_exhausted(result["error"]):
+            # Quota épuisé : ce n'est pas une mesure de NOTRE système, et
+            # toutes les fiches suivantes échoueraient pareil en 2 s (vu le
+            # 30 oct : 11 "plantages" sur 16 qui ne mesuraient que le quota).
+            # On ne l'enregistre pas et on s'arrête.
+            print(f"\nQuota Gemini épuisé à la question {case['id']} : arrêt.")
+            break
+        result["run"] = i
+        results.append(result)
+        # Écrit tout de suite : une interruption ne perd que la fiche en cours.
+        with out.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(result, ensure_ascii=False) + "\n")
+        status = "PLANTÉ" if result["crashed"] else result["status"]
+        judged = result.get("judge_passed")
+        print(f"[{len(results)}/{total}] {case['id']}: {status}, juge={judged}")
 
     print_summary(aggregate(results))
     print(f"\nFiches détaillées : {out}")
