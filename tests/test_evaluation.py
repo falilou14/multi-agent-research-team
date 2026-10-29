@@ -2,6 +2,7 @@ from fakes import BrokenModel, FakeSearch, fake_model, judgement_call, search_ca
 from langchain_core.messages import AIMessage
 
 from multi_agent_research_team.evaluation import (
+    aggregate,
     load_cases,
     make_eval_judge,
     mentions_ok,
@@ -97,6 +98,41 @@ def test_run_case_enregistre_le_verdict_du_juge():
 
     assert result["judge_passed"] is True
     assert result["judge_reason"] == "Prémisse corrigée."
+
+
+def fiche(family, status="approuve", judge=True, mentions=True, crashed=False):
+    if crashed:
+        return {"family": family, "crashed": True}
+    return {
+        "family": family,
+        "crashed": False,
+        "status": status,
+        "judge_passed": judge,
+        "mentions_ok": mentions,
+        "searches": 2,
+        "revisions": 0,
+        "duration_s": 10.0,
+    }
+
+
+def test_aggregate_calcule_les_taux_en_excluant_les_none():
+    results = [
+        fiche("introuvable", status="rejete", judge=True, mentions=None),
+        fiche("introuvable", status="rejete", judge=None, mentions=None),
+        fiche("recent"),
+        fiche("recent", crashed=True),
+    ]
+
+    s = aggregate(results)
+
+    assert s["total"]["crashed"] == (1, 4)
+    assert s["total"]["approved"] == (1, 3)  # les plantages ne sont pas notés
+    assert s["total"]["judge_passed"] == (2, 2)  # le "non jugé" est exclu
+    assert s["total"]["mentions_ok"] == (1, 1)
+    assert s["by_family"]["introuvable"]["cross"] == {
+        "rejete / juge_ok": 1,
+        "rejete / non_juge": 1,
+    }
 
 
 def test_le_jeu_reel_se_charge():

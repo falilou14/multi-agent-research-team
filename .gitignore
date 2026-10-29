@@ -23,3 +23,6 @@ Thumbs.db
 *.egg-info/
 dist/
 build/
+
+# Résultats bruts des lancements d'évaluation (rapports complets, régénérables)
+evals/results/
