@@ -156,9 +156,13 @@ def run_case(
     }
 
 
+QUOTA_RETRIES = 3
+QUOTA_WAIT_S = 60
+
+
 def is_quota_exhausted(error: str) -> bool:
     # 429 RESOURCE_EXHAUSTED : quota de l'API dépassé (≠ 503/504, pannes
-    # passagères qui, elles, peuvent se résorber à la question suivante).
+    # passagères du serveur, qui elles sont comptées comme plantages).
     return "RESOURCE_EXHAUSTED" in error
 
 
@@ -235,6 +239,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Évalue l'équipe sur le jeu figé.")
     parser.add_argument("--runs", type=int, default=1, help="passages par question")
     parser.add_argument("--ids", help="ids séparés par des virgules (défaut : toutes)")
+    parser.add_argument("--pause", type=float, default=30, help="secondes entre deux questions")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
@@ -253,14 +258,23 @@ def main() -> None:
     out.parent.mkdir(exist_ok=True)
     results = []
     total = len(cases) * args.runs
-    for i, case in itertools.product(range(args.runs), cases):
+    for n, (i, case) in enumerate(itertools.product(range(args.runs), cases)):
+        if n and args.pause:
+            time.sleep(args.pause)  # étale les rafales d'appels sous la limite par minute
         result = run_case(team, case, judge)
+        # Un 429 ne mesure pas NOTRE système, seulement le quota : on ne
+        # l'enregistre jamais. Le palier gratuit est limité PAR MINUTE (15
+        # requêtes, vu le 2 nov), et une question en fait ~6 à 10 en rafale :
+        # on attend que la minute passe et on rejoue la même question.
+        for _ in range(QUOTA_RETRIES):
+            if not (result["crashed"] and is_quota_exhausted(result["error"])):
+                break
+            print(f"  quota par minute atteint sur {case['id']} : pause de {QUOTA_WAIT_S} s")
+            time.sleep(QUOTA_WAIT_S)
+            result = run_case(team, case, judge)
         if result["crashed"] and is_quota_exhausted(result["error"]):
-            # Quota épuisé : ce n'est pas une mesure de NOTRE système, et
-            # toutes les fiches suivantes échoueraient pareil en 2 s (vu le
-            # 30 oct : 11 "plantages" sur 16 qui ne mesuraient que le quota).
-            # On ne l'enregistre pas et on s'arrête.
-            print(f"\nQuota Gemini épuisé à la question {case['id']} : arrêt.")
+            # Toujours bloqué après plusieurs minutes : quota JOURNALIER.
+            print(f"\nQuota Gemini épuisé (journalier ?) à {case['id']} : arrêt.")
             break
         result["run"] = i
         results.append(result)
