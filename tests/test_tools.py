@@ -1,3 +1,4 @@
+import pytest
 from fakes import FakeDDGS, FakeSearch, FakeTavilyClient
 from langchain_core.messages import ToolMessage
 
@@ -41,12 +42,38 @@ def test_aucun_resultat_donne_un_message_explicite():
 
 
 def test_une_panne_du_moteur_est_renvoyee_au_modele_sans_planter():
-    tool = make_search_tool(ddgs_backend(FakeDDGS(error=TimeoutError("lent"))))
+    tool = make_search_tool(ddgs_backend(FakeDDGS(error=TimeoutError("lent")), wait_s=0))
 
     msg = call(tool, "q")
 
     assert msg.content.startswith("Erreur de recherche (TimeoutError)")
     assert msg.artifact == []
+
+
+def test_ddgs_instable_est_reessaye_sans_que_l_agent_le_voie():
+    raw = {"href": "https://a.com", "title": "A", "body": "x"}
+    client = FakeDDGS([raw], error=RuntimeError("No results found."), failures=2)
+
+    results = ddgs_backend(client, wait_s=0)("q")
+
+    assert client.calls == 3  # 2 échecs puis succès, dans le même appel
+    assert results == [{"url": "https://a.com", "title": "A", "content": "x"}]
+
+
+def test_ddgs_abandonne_apres_trois_essais():
+    client = FakeDDGS(error=RuntimeError("No results found."))
+
+    with pytest.raises(RuntimeError):
+        ddgs_backend(client, wait_s=0)("q")
+    assert client.calls == 3
+
+
+def test_un_resultat_sans_url_est_ecarte():
+    raws = [{"href": "", "title": "vide", "body": "x"}, {"href": "https://a.com", "body": "y"}]
+
+    results = ddgs_backend(FakeDDGS(raws))("q")
+
+    assert [r["url"] for r in results] == ["https://a.com"]
 
 
 def test_les_deux_backends_normalisent_au_meme_format():

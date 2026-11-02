@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -38,7 +39,11 @@ MAX_RESULTS = 5
 MAX_CHARS_PER_RESULT = 1200
 
 
-def ddgs_backend(client: Any = None) -> SearchFn:
+DDGS_ATTEMPTS = 3
+DDGS_RETRY_WAIT_S = 1.0
+
+
+def ddgs_backend(client: Any = None, wait_s: float = DDGS_RETRY_WAIT_S) -> SearchFn:
     """DuckDuckGo via `ddgs` (métamoteur) : gratuit, sans clé, sans compte.
     Contrepartie : pas d'API officielle, donc rate-limit possible."""
     if client is None:
@@ -47,10 +52,27 @@ def ddgs_backend(client: Any = None) -> SearchFn:
         client = DDGS(timeout=10)
 
     def search(query: str) -> list[Source]:
-        results = client.text(query, max_results=MAX_RESULTS)
+        # Mesure du 2 nov : "No results found" sur 18 recherches sur ~29,
+        # alors que la même requête réussissait au 2e essai. On réessaie ICI,
+        # invisible pour l'agent : sinon chaque panne lui coûte une recherche
+        # de son budget de 3 ET un appel Gemini pour décider de relancer.
+        for attempt in range(1, DDGS_ATTEMPTS + 1):
+            try:
+                results = client.text(query, max_results=MAX_RESULTS)
+                break
+            except Exception as exc:
+                if attempt == DDGS_ATTEMPTS:
+                    raise
+                logger.info(
+                    "ddgs: essai %d/%d échoué (%r), on réessaie", attempt, DDGS_ATTEMPTS, exc
+                )
+                time.sleep(wait_s * attempt)
         return [
             {"url": r["href"], "title": r.get("title", ""), "content": r.get("body", "")}
             for r in results
+            # Vu en vrai : un résultat à l'URL vide. Sans URL, une source ne
+            # peut être ni citée ni contrôlée par le Vérificateur (niveau 1).
+            if r.get("href")
         ]
 
     return search

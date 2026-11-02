@@ -66,12 +66,22 @@ class FakeTavilyClient:
 
 
 class FakeDDGS:
-    def __init__(self, results: list[dict[str, Any]] | None = None, error: Exception | None = None):
+    def __init__(
+        self,
+        results: list[dict[str, Any]] | None = None,
+        error: Exception | None = None,
+        failures: int | None = None,
+    ):
+        """`failures` : nombre d'appels qui lèvent `error` avant de réussir
+        (None = échoue toujours) -- pour simuler l'instabilité de DuckDuckGo."""
         self.results = results or []
         self.error = error
+        self.failures = failures
+        self.calls = 0
 
     def text(self, query: str, **kwargs) -> list[dict[str, Any]]:
-        if self.error:
+        self.calls += 1
+        if self.error and (self.failures is None or self.calls <= self.failures):
             raise self.error
         return self.results
 
