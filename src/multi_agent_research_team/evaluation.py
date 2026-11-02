@@ -131,9 +131,15 @@ def run_case(
 
     state: dict[str, Any] = {"question": case["question"]}
     trajectory = []
+    # Chaque version du rapport, pas seulement la finale : sans elles, on ne
+    # peut pas savoir si la boucle de correction a réparé ou DÉTRUIT une bonne
+    # réponse (soupçon du 2 nov sur Ballon d'Or : 2 réécritures -> "rien").
+    drafts = []
     for step in steps:
         for node, update in step.items():
             trajectory.append(node)
+            if update and "report" in update:
+                drafts.append(update["report"])
             state.update(update or {})
 
     report = state.get("report", "")
@@ -152,6 +158,8 @@ def run_case(
         "judge_passed": judgement.passed if judgement else None,
         "judge_reason": judgement.reason if judgement else None,
         "report": report,
+        "drafts": drafts,
+        "notes": state.get("notes", ""),
         "unsupported_claims": state["verdict"].unsupported_claims if state.get("verdict") else [],
     }
 

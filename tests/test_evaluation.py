@@ -146,3 +146,19 @@ def test_le_jeu_reel_se_charge():
 def test_quota_epuise_se_distingue_des_pannes_passageres():
     assert is_quota_exhausted("GoogleRateLimitError: 429 RESOURCE_EXHAUSTED. quota")
     assert not is_quota_exhausted("GoogleAPIError: 503 UNAVAILABLE. high demand")
+
+
+def test_run_case_garde_chaque_version_du_rapport_et_les_notes():
+    team = make_team(
+        [
+            AIMessage("v1 sans source"),
+            verdict_call(False, ["v1 sans source"]),
+            AIMessage("v2 [https://a.com]"),
+            verdict_call(True),
+        ]
+    )
+
+    result = run_case(team, CASE)
+
+    assert result["drafts"] == ["v1 sans source", "v2 [https://a.com]"]
+    assert result["notes"] == "- Nobel 1921 [https://a.com]"
