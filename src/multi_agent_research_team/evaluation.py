@@ -240,6 +240,9 @@ def main() -> None:
     parser.add_argument("--runs", type=int, default=1, help="passages par question")
     parser.add_argument("--ids", help="ids séparés par des virgules (défaut : toutes)")
     parser.add_argument("--pause", type=float, default=30, help="secondes entre deux questions")
+    parser.add_argument(
+        "--retry-crashed", action="store_true", help="rejoue une fois une question plantée"
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
@@ -276,6 +279,16 @@ def main() -> None:
             # Toujours bloqué après plusieurs minutes : quota JOURNALIER.
             print(f"\nQuota Gemini épuisé (journalier ?) à {case['id']} : arrêt.")
             break
+        if result["crashed"] and args.retry_crashed:
+            # Vu le 2 nov : 6 plantages d'affilée sur des 504/503 de Google,
+            # pile sur les questions qu'on voulait mesurer. Une seconde chance,
+            # mais le 1er plantage reste ÉCRIT dans la fiche : on étiquette,
+            # on ne cache pas.
+            print(f"  {case['id']} a planté ({result['error'][:40]}...) : 2e essai")
+            time.sleep(args.pause)
+            first_error = result["error"]
+            result = run_case(team, case, judge)
+            result["first_error"] = first_error
         result["run"] = i
         results.append(result)
         # Écrit tout de suite : une interruption ne perd que la fiche en cours.
