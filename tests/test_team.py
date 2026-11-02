@@ -65,12 +65,47 @@ def test_niveau1_une_url_inventee_est_rejetee_sans_appeler_le_llm():
     assert llm.calls == []
 
 
-def test_niveau1_un_rapport_sans_citation_est_rejete():
-    verifier = make_verifier_node(fake_model([]))
+def test_sans_citation_un_aveu_d_ignorance_est_accepte():
+    # Fausse alarme mesurée le 2 nov : "rien trouvé" était rejeté faute d'URL.
+    llm = fake_model([verdict_call(True)])
+    verifier = make_verifier_node(llm)
 
-    update = verifier({"report": "Des faits sans aucune source.", "sources": SOURCES})
+    update = verifier({"report": "Les notes ne permettent pas de répondre.", "sources": SOURCES})
 
-    assert update["verdict"] == Verdict(approved=False, unsupported_claims=["Aucune source citée."])
+    assert update["verdict"].approved is True
+    seen = llm.inputs[0]
+    assert "ne cite AUCUNE source" in seen[0].content  # consigne dédiée, pas VERIFIER_PROMPT
+    assert "Texte de B" not in seen[-1].content  # rien à comparer : sources non envoyées
+
+
+def test_sans_citation_un_fait_nu_reste_rejete():
+    claim = "Zorblax a fait 12 millions d'euros en 2025."
+    verifier = make_verifier_node(fake_model([verdict_call(False, [claim])]))
+
+    update = verifier({"report": claim, "sources": SOURCES})
+
+    assert update["verdict"] == Verdict(approved=False, unsupported_claims=[claim])
+
+
+def test_zero_source_reponse_fixe_sans_redacteur_ni_verificateur():
+    from multi_agent_research_team.team import NO_SOURCES_REPORT, build_team
+
+    research_llm = fake_model([search_call("q1", "c1"), AIMessage("Rien trouvé.")])
+    research_agent = build_research_agent(research_llm, [make_search_tool(FakeSearch({}))])
+    team_llm = fake_model([])  # un appel au Rédacteur ou au Vérificateur ferait échouer
+    team = build_team(research_agent, team_llm)
+
+    steps = list(team.stream({"question": "q"}, stream_mode="updates"))
+    final = {}
+    for step in steps:
+        for update in step.values():
+            final.update(update or {})
+
+    trajectory = [node for step in steps for node in step if node != "supervisor"]
+    assert trajectory == ["research", "no_sources"]
+    assert final["report"] == NO_SOURCES_REPORT
+    assert final["verdict"].approved is True
+    assert team_llm.calls == []
 
 
 def test_niveau2_le_llm_juge_avec_le_texte_complet_des_seules_sources_citees():
@@ -99,16 +134,17 @@ def test_route_suit_les_onglets_remplis():
     from multi_agent_research_team.team import route
 
     assert route(dossier()) == "research"
-    assert route(dossier(notes="n", sources=[])) == "writer"
-    assert route(dossier(notes="n", sources=[], report="r")) == "verifier"
+    assert route(dossier(notes="n", sources=[])) == "no_sources"
+    assert route(dossier(notes="n", sources=[SRC_A])) == "writer"
+    assert route(dossier(notes="n", sources=[SRC_A], report="r")) == "verifier"
     approved = Verdict(approved=True)
-    assert route(dossier(notes="n", sources=[], report="r", verdict=approved)) == END
+    assert route(dossier(notes="n", sources=[SRC_A], report="r", verdict=approved)) == END
 
 
 def test_route_rejet_avec_budget_renvoie_au_redacteur():
     from multi_agent_research_team.team import route
 
-    state = dossier(notes="n", sources=[], report="r", verdict=REJECTED, revisions=0)
+    state = dossier(notes="n", sources=[SRC_A], report="r", verdict=REJECTED, revisions=0)
 
     assert route(state) == "writer"
 
@@ -118,7 +154,7 @@ def test_route_verdict_efface_apres_reecriture_renvoie_au_verificateur():
 
     # Après réécriture, le Rédacteur a vidé l'onglet verdict (None) :
     # le NOUVEAU rapport doit être vérifié.
-    state = dossier(notes="n", sources=[], report="r v2", verdict=None, revisions=1)
+    state = dossier(notes="n", sources=[SRC_A], report="r v2", verdict=None, revisions=1)
 
     assert route(state) == "verifier"
 
@@ -128,7 +164,9 @@ def test_route_rejet_budget_epuise_termine_quand_meme():
 
     from multi_agent_research_team.team import MAX_REVISIONS, route
 
-    state = dossier(notes="n", sources=[], report="r", verdict=REJECTED, revisions=MAX_REVISIONS)
+    state = dossier(
+        notes="n", sources=[SRC_A], report="r", verdict=REJECTED, revisions=MAX_REVISIONS
+    )
 
     assert route(state) == END
 
@@ -163,7 +201,7 @@ def test_equipe_complete_trajectoire_et_dossier_final():
 def test_premiere_redaction_initialise_le_compteur_sans_toucher_au_verdict():
     writer = make_writer_node(fake_model([AIMessage("rapport v1")]))
 
-    update = writer(dossier(notes="- fait A [https://a.com]", sources=[]))
+    update = writer(dossier(notes="- fait A [https://a.com]", sources=[SRC_A]))
 
     assert update == {"report": "rapport v1", "revisions": 0}
 
@@ -173,7 +211,7 @@ def test_reecriture_recoit_les_reproches_efface_le_verdict_et_compte():
     writer = make_writer_node(llm)
 
     update = writer(
-        dossier(notes="- fait A [https://a.com]", sources=[], report="rapport v1",
+        dossier(notes="- fait A [https://a.com]", sources=[SRC_A], report="rapport v1",
                 verdict=REJECTED, revisions=0)
     )  # fmt: skip
 
@@ -244,7 +282,7 @@ def test_filet_global_arrete_un_superviseur_bugge(monkeypatch):
     team = team_module.build_team(build_research_agent(llm, []), llm)
 
     with pytest.raises(GraphRecursionError):
-        team.invoke(dossier(notes="n", sources=[]))
+        team.invoke(dossier(notes="n", sources=[SRC_A]))
     # Arrêté par le filet après ~RECURSION_LIMIT étapes, pas 10 007.
     assert len(llm.calls) <= team_module.RECURSION_LIMIT
 
@@ -265,7 +303,7 @@ def test_route_une_panne_de_verification_termine_sans_reecrire():
 
     from multi_agent_research_team.team import route
 
-    state = dossier(notes="n", sources=[], report="r", verdict=Verdict(approved=False),
+    state = dossier(notes="n", sources=[SRC_A], report="r", verdict=Verdict(approved=False),
                     revisions=0, verification_error="TimeoutError: 504")  # fmt: skip
 
     # Il reste du budget, mais réécrire ne corrigerait pas une panne réseau.

@@ -45,6 +45,23 @@ appuyée si sa source ne la mentionne pas, la contredit, ou ne dit qu'une partie
 Approuve le rapport uniquement si TOUTES les affirmations sont appuyées. Sinon,
 liste chaque affirmation non appuyée, recopiée telle qu'elle apparaît dans le rapport."""
 
+# Utilisé quand le rapport ne cite aucune URL alors que des sources existent
+# (souvent hors sujet, ex. une entreprise fictive). Seul le cas "aucun fait
+# affirmé" est acceptable sans source ; tout fait non sourcé reste rejeté.
+NO_CITATION_PROMPT = """Tu es le Vérificateur d'une équipe de recherche. Tu es sceptique.
+Le rapport ci-dessous ne cite AUCUNE source.
+
+Un rapport sans source est acceptable UNIQUEMENT s'il n'affirme aucun fait : il se
+contente de dire que l'information n'a pas été trouvée ou que les notes ne suffisent pas.
+Approuve-le dans ce cas seulement. S'il affirme le moindre fait (un nom, une date, un
+chiffre, une explication), rejette-le et liste chaque affirmation, recopiée telle quelle."""
+
+# Livré tel quel, sans LLM, quand la Recherche n'a ramené aucune source.
+NO_SOURCES_REPORT = (
+    "Aucune source n'a pu être trouvée pour cette question : je ne peux pas y "
+    "répondre de façon sourcée."
+)
+
 # Nombre maximal de réécritures après un rejet du Vérificateur (budget de la
 # boucle de correction, distinct du plafond de recherches de l'agent Recherche).
 MAX_REVISIONS = 2
@@ -75,6 +92,17 @@ def make_research_node(research_agent: CompiledStateGraph):
         return {"notes": out["notes"], "sources": out["sources"], "searches": out["searches"]}
 
     return research
+
+
+def no_sources(state: TeamState) -> dict[str, Any]:
+    """
+    Zéro source : rien ne peut être sourcé, donc la seule réponse honnête est
+    connue d'avance. Décidé par le CODE, sans Rédacteur : aucun LLM n'écrit,
+    donc rien ne peut être inventé (avant, ce cas finissait en "rien trouvé"
+    rejeté faute d'URL, puis 2 réécritures inutiles -- mesure du 2 nov).
+    """
+    # approved=True : le message n'affirme aucun fait, il n'y a rien à vérifier.
+    return {"report": NO_SOURCES_REPORT, "verdict": Verdict(approved=True)}
 
 
 def make_writer_node(llm: BaseChatModel):
@@ -134,38 +162,17 @@ def make_verifier_node(llm: BaseChatModel):
          sources réellement récupérées. Sinon -> rejet immédiat, sans LLM.
       2. LLM (jugement) : la source dit-elle vraiment ce que le rapport
          affirme ? Réponse forcée au format `Verdict` (structured output).
+         Sans aucune citation : le LLM vérifie seulement que le rapport
+         n'affirme aucun fait (aveu "rien trouvé" accepté, fait nu rejeté).
     """
     # with_structured_output : Gemini est OBLIGÉ de répondre en remplissant
     # le formulaire Verdict (validé par Pydantic), pas en texte libre --
     # c'est ce qui permet au superviseur (du code) de lire la décision.
     judge = llm.with_structured_output(Verdict)
 
-    def verifier(state: TeamState) -> dict[str, Any]:
-        report, sources = state["report"], state["sources"]  # lit : report, sources
-        cited = extract_cited_urls(report)
-        known = {s["url"] for s in sources}
-
-        # --- Niveau 1 : code ---
-        if not cited:
-            return {"verdict": Verdict(approved=False, unsupported_claims=["Aucune source citée."])}
-        invented = sorted(cited - known)
-        if invented:
-            claims = [f"URL citée absente des sources récupérées : {url}" for url in invented]
-            return {"verdict": Verdict(approved=False, unsupported_claims=claims)}
-
-        # --- Niveau 2 : LLM ---
-        # On ne lui montre que les sources CITÉES, en texte complet (pas les
-        # extraits tronqués du Chapitre 1) : c'est tout ce dont il a besoin.
-        cited_sources = "\n\n---\n\n".join(
-            f"URL: {s['url']}\n{s['content']}" for s in sources if s["url"] in cited
-        )
+    def ask_judge(prompt: str, content: str) -> dict[str, Any]:
         try:
-            verdict = judge.invoke(
-                [
-                    SystemMessage(VERIFIER_PROMPT),
-                    HumanMessage(f"Rapport :\n{report}\n\nSources citées :\n{cited_sources}"),
-                ]
-            )
+            verdict = judge.invoke([SystemMessage(prompt), HumanMessage(content)])
         except Exception as exc:
             # Panne du LLM (vu en trace LangSmith : 2 x 30 s puis 504 au 3e
             # passage, et 4 min de travail perdues dans le plantage). On livre
@@ -177,6 +184,33 @@ def make_verifier_node(llm: BaseChatModel):
                 "verification_error": f"{type(exc).__name__}: {exc}",
             }
         return {"verdict": verdict}  # écrit : verdict
+
+    def verifier(state: TeamState) -> dict[str, Any]:
+        report, sources = state["report"], state["sources"]  # lit : report, sources
+        cited = extract_cited_urls(report)
+        known = {s["url"] for s in sources}
+
+        # --- Niveau 1 : code ---
+        invented = sorted(cited - known)
+        if invented:
+            claims = [f"URL citée absente des sources récupérées : {url}" for url in invented]
+            return {"verdict": Verdict(approved=False, unsupported_claims=claims)}
+        if not cited:
+            # Avant : rejet d'office. Mais "je n'ai rien trouvé" est honnête
+            # (fausse alarme mesurée le 2 nov). Le code ne sait pas distinguer
+            # un aveu d'ignorance d'un fait inventé sans source : seul ce cas
+            # douteux part au LLM, avec une consigne dédiée.
+            return ask_judge(NO_CITATION_PROMPT, f"Rapport :\n{report}")
+
+        # --- Niveau 2 : LLM ---
+        # On ne lui montre que les sources CITÉES, en texte complet (pas les
+        # extraits tronqués du Chapitre 1) : c'est tout ce dont il a besoin.
+        cited_sources = "\n\n---\n\n".join(
+            f"URL: {s['url']}\n{s['content']}" for s in sources if s["url"] in cited
+        )
+        return ask_judge(
+            VERIFIER_PROMPT, f"Rapport :\n{report}\n\nSources citées :\n{cited_sources}"
+        )
 
     return verifier
 
@@ -190,6 +224,8 @@ def route(state: TeamState) -> str:
     """
     if "notes" not in state:
         return "research"
+    if not state.get("sources") and "report" not in state:
+        return "no_sources"  # décision certaine : rien à rédiger ni à vérifier
     if "report" not in state:
         return "writer"
     verdict = state.get("verdict")
@@ -221,11 +257,12 @@ def build_team(research_agent: CompiledStateGraph, llm: BaseChatModel) -> Compil
     graph.add_node("research", make_research_node(research_agent))
     graph.add_node("writer", make_writer_node(llm))
     graph.add_node("verifier", make_verifier_node(llm))
+    graph.add_node("no_sources", no_sources)
 
     graph.add_edge(START, "supervisor")
     graph.add_conditional_edges("supervisor", route)
     # Topologie en étoile : chaque agent rend la main au superviseur.
-    for agent in ("research", "writer", "verifier"):
+    for agent in ("research", "writer", "verifier", "no_sources"):
         graph.add_edge(agent, "supervisor")
     return graph.compile().with_config(recursion_limit=RECURSION_LIMIT, run_name="research_team")
 
