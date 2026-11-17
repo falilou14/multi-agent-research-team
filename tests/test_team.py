@@ -308,3 +308,32 @@ def test_route_une_panne_de_verification_termine_sans_reecrire():
 
     # Il reste du budget, mais réécrire ne corrigerait pas une panne réseau.
     assert route(state) == END
+
+
+def test_extraction_garde_les_apostrophes_des_urls_wikipedia_fr():
+    # Régression (16 nov) : coupées à l'apostrophe, ces vraies URL passaient
+    # pour inventées et la boucle de correction effaçait la bonne réponse.
+    report = (
+        "Dembélé [https://fr.wikipedia.org/wiki/Ballon_d'or_2025]. "
+        "CAN [https://fr.wikipedia.org/wiki/Coupe_d'Afrique_des_nations_de_football]."
+    )
+
+    assert extract_cited_urls(report) == {
+        "https://fr.wikipedia.org/wiki/Ballon_d'or_2025",
+        "https://fr.wikipedia.org/wiki/Coupe_d'Afrique_des_nations_de_football",
+    }
+
+
+def test_extraction_retire_l_apostrophe_de_fermeture():
+    assert extract_cited_urls("Voir 'https://a.com'.") == {"https://a.com"}
+
+
+def test_une_vraie_url_a_apostrophe_n_est_pas_prise_pour_inventee():
+    url = "https://fr.wikipedia.org/wiki/Ballon_d'or_2025"
+    source = {"url": url, "title": "Ballon d'or", "content": "Dembélé a gagné."}
+    llm = fake_model([verdict_call(True)])
+
+    update = make_verifier_node(llm)({"report": f"Dembélé [{url}]", "sources": [source]})
+
+    assert update["verdict"].approved is True  # passe le niveau 1, jugé au niveau 2
+    assert len(llm.calls) == 1

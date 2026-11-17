@@ -74,8 +74,12 @@ MAX_REVISIONS = 2
 # (10 007 étapes) en consommant du quota LLM à chaque tour.
 RECURSION_LIMIT = 30
 
-# Une URL s'arrête au premier espace, crochet, parenthèse, virgule ou guillemet.
-_URL_RE = re.compile(r"https?://[^\s\[\]()<>,\"']+")
+# Une URL s'arrête au premier espace, crochet, parenthèse, virgule ou guillemet
+# double. L'apostrophe est AUTORISÉE : les URL Wikipédia FR en contiennent
+# ("Ballon_d'or_2025"). L'exclure coupait l'URL, que le niveau 1 prenait alors
+# pour une URL inventée -- bug trouvé le 16 nov en lisant les brouillons : la
+# boucle de correction effaçait une bonne réponse correctement citée.
+_URL_RE = re.compile(r"https?://[^\s\[\]()<>,\"]+")
 
 
 def make_research_node(research_agent: CompiledStateGraph):
@@ -151,15 +155,17 @@ def make_writer_node(llm: BaseChatModel):
 
 
 def extract_cited_urls(report: str) -> set[str]:
-    # rstrip : une URL en fin de phrase embarque souvent le point final.
-    return {url.rstrip(".;:") for url in _URL_RE.findall(report)}
+    # rstrip : une URL en fin de phrase embarque souvent le point final, et
+    # une URL entre apostrophes ('https://a.com') son apostrophe de fermeture.
+    return {url.rstrip(".;:'") for url in _URL_RE.findall(report)}
 
 
 def make_verifier_node(llm: BaseChatModel):
     """
     Vérification en deux niveaux :
-      1. CODE (gratuit, infaillible) : chaque URL citée doit être dans les
-         sources réellement récupérées. Sinon -> rejet immédiat, sans LLM.
+      1. CODE (gratuit, certain S'IL EST CORRECT -- cf. bug de l'apostrophe) :
+         chaque URL citée doit être dans les sources réellement récupérées.
+         Sinon -> rejet immédiat, sans LLM.
       2. LLM (jugement) : la source dit-elle vraiment ce que le rapport
          affirme ? Réponse forcée au format `Verdict` (structured output).
          Sans aucune citation : le LLM vérifie seulement que le rapport
