@@ -6,9 +6,10 @@
                       ┌──────────── rejeté + budget restant ───────────┐
                       ▼                                                 │
 START → supervisor → research → writer → verifier ─┬─ approuvé ──────► FIN
-                                                    ├─ rejeté, budget épuisé ──► FIN (verdict négatif)
-                                                    ├─ panne du LLM-juge ──────► FIN (« non vérifié »)
-                                                    └──────────────────────────────┘
+                         │                          ├─ rejeté, budget épuisé ──► FIN (verdict négatif)
+                         │                          ├─ panne du LLM-juge ──────► FIN (« non vérifié »)
+                         │                          └──────────────────────────────┘
+                         └─ aucune source ─► no_sources ─► FIN (message fixe, aucun LLM n'écrit)
 ```
 
 Topologie en étoile : chaque agent rend la main au `supervisor`, qui décide de la suite (`route()` dans `team.py`).
@@ -19,10 +20,12 @@ Topologie en étoile : chaque agent rend la main au `supervisor`, qui décide de
 |---|---|---|---|
 | **Superviseur** | ❌ Non | Des `if` en Python (`route`) : l'ordre est connu d'avance | `team.py` |
 | **Recherche** | ✅ Jusqu'à 4 appels | Gemini décide quoi chercher et écrit les notes | `research_agent.py` |
-| ↳ outil `web_search` | ❌ Non | Du code qui interroge DuckDuckGo (ou Tavily) | `tools.py` |
+| ↳ outil `web_search` | ❌ Non | Du code qui interroge DuckDuckGo (ou Tavily), avec 3 essais si DuckDuckGo échoue | `tools.py` |
+| **`no_sources`** | ❌ Non | Zéro source → message fixe « je ne peux pas répondre de façon sourcée » | `team.py` |
 | **Rédacteur** | ✅ 1 appel (+1 par réécriture) | Gemini écrit le rapport à partir des notes | `team.py` |
 | **Vérificateur, niveau 1** | ❌ Non | Du code : chaque URL citée est-elle dans les sources récupérées ? | `team.py` |
-| **Vérificateur, niveau 2** | ✅ 1 appel | Gemini juge si chaque source dit vraiment ce que le rapport affirme | `team.py` |
+| **Vérificateur, niveau 2** | ✅ 1 appel | Gemini juge si chaque source dit vraiment ce que le rapport affirme. Rapport sans aucune citation : il vérifie seulement qu'aucun fait n'est affirmé (« rien trouvé » accepté) | `team.py` |
+| **Juge d'évaluation** (hors produit) | ✅ 1 appel par fiche | Gemini compare le rapport au comportement attendu : « bien répondu ? » | `evaluation.py` |
 
 Règle suivie partout : **ce qu'un `if` peut décider, on ne le confie pas à un LLM**. Le LLM ne sert que là où il faut du jugement.
 
@@ -60,6 +63,8 @@ Chaque agent ne reçoit que le minimum dont il a besoin. Le carnet interne de la
 | Exécution dans la limite du budget | Dépassement par appels parallèles | case `tools`, `research_agent.py` |
 | `MAX_REVISIONS = 2` | Boucle Rédacteur ⇄ Vérificateur infinie | `route()`, `team.py` |
 | Vérificateur niveau 1 avant le LLM | URL inventée validée par erreur | `team.py` |
+| Nœud `no_sources` | Rapport inventé quand la recherche ne ramène rien | `route()`, `team.py` |
+| 3 essais DuckDuckGo dans le backend | Budget de recherches gâché par des pannes passagères | `ddgs_backend`, `tools.py` |
 | Panne du juge → « non vérifié » | Travail perdu sur un plantage | `team.py` |
 | `timeout=30, max_retries=2` (= 2 tentatives au total) | Attente réseau (503/504 Gemini) | `llm.py` |
 | `RECURSION_LIMIT = 30` | Bug de routage imprévu | `build_team`, `team.py` |
@@ -67,3 +72,15 @@ Chaque agent ne reçoit que le minimum dont il a besoin. Le carnet interne de la
 ## Observabilité
 
 LangSmith trace chaque exécution (`LANGCHAIN_TRACING_V2=true` dans `.env`) : graphes nommés `research_team` / `research_agent`, métadonnées `model` et `question`. Les tests désactivent le tracing (`tests/conftest.py`).
+
+## Évaluation (Ch.5)
+
+`python -m multi_agent_research_team.evaluation --runs 2 --retry-crashed` fait passer l'équipe sur le jeu **figé** `evals/questions.json` (16 questions, 6 familles, empreinte SHA-256 vérifiée en test).
+
+| Niveau | Mesuré par | Quoi |
+|---|---|---|
+| Trajectoire | code | plantage, statut, recherches, réécritures, durée, brouillons, notes |
+| Qualité 1 | code (`mentions_ok`) | un mot attendu est-il présent ? (`None` si aucun attendu) |
+| Qualité 2 | LLM (`make_eval_judge`) | le rapport adopte-t-il le comportement attendu ? |
+
+Règles : un plantage est un résultat (pas une exception) ; `None` exclu des taux ; chaque fiche écrite dès qu'elle est prête (`evals/results/`, hors git) ; 429 par minute → pause puis nouvel essai, jamais enregistré ; une seule modification entre deux mesures, même modèle et même juge.
