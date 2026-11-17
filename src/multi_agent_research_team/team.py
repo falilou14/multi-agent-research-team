@@ -74,12 +74,14 @@ MAX_REVISIONS = 2
 # (10 007 étapes) en consommant du quota LLM à chaque tour.
 RECURSION_LIMIT = 30
 
-# Une URL s'arrête au premier espace, crochet, parenthèse, virgule ou guillemet
-# double. L'apostrophe est AUTORISÉE : les URL Wikipédia FR en contiennent
-# ("Ballon_d'or_2025"). L'exclure coupait l'URL, que le niveau 1 prenait alors
-# pour une URL inventée -- bug trouvé le 16 nov en lisant les brouillons : la
-# boucle de correction effaçait une bonne réponse correctement citée.
-_URL_RE = re.compile(r"https?://[^\s\[\]()<>,\"]+")
+# Une URL s'arrête au premier espace, crochet, chevron ou guillemet double.
+# Apostrophe, parenthèses et virgule sont AUTORISÉES : Wikipédia en met dans ses
+# URL ("Ballon_d'or_2025", "Michael_Jackson_(baseball_player)", "Paris,_Texas").
+# Les exclure coupait l'URL, que le niveau 1 prenait pour une URL inventée --
+# bugs trouvés les 16 et 17 nov en lisant les brouillons : la boucle de
+# correction effaçait une bonne réponse correctement citée. Ce qui est en
+# trop en FIN d'URL est retiré par `_clean_url`.
+_URL_RE = re.compile(r"https?://[^\s\[\]<>\"]+")
 
 
 def make_research_node(research_agent: CompiledStateGraph):
@@ -154,10 +156,23 @@ def make_writer_node(llm: BaseChatModel):
     return writer
 
 
+def _clean_url(url: str) -> str:
+    """Retire la ponctuation de la phrase collée en fin d'URL."""
+    while True:
+        # Point final, virgule entre deux URL, apostrophe de fermeture
+        # ('https://a.com')...
+        url = url.rstrip(".;:,'")
+        # ... et ")" seulement si elle n'a pas de "(" dans l'URL :
+        # "(voir https://a.com)" -> "https://a.com", mais
+        # ".../Michael_Jackson_(baseball_player)" reste intact.
+        if url.endswith(")") and url.count(")") > url.count("("):
+            url = url[:-1]
+            continue
+        return url
+
+
 def extract_cited_urls(report: str) -> set[str]:
-    # rstrip : une URL en fin de phrase embarque souvent le point final, et
-    # une URL entre apostrophes ('https://a.com') son apostrophe de fermeture.
-    return {url.rstrip(".;:'") for url in _URL_RE.findall(report)}
+    return {_clean_url(url) for url in _URL_RE.findall(report)}
 
 
 def make_verifier_node(llm: BaseChatModel):

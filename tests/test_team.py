@@ -337,3 +337,18 @@ def test_une_vraie_url_a_apostrophe_n_est_pas_prise_pour_inventee():
 
     assert update["verdict"].approved is True  # passe le niveau 1, jugé au niveau 2
     assert len(llm.calls) == 1
+
+
+def test_extraction_garde_parentheses_et_virgules_des_urls_wikipedia():
+    # Régression (17 nov), même famille que l'apostrophe : la parenthèse
+    # coupait l'URL d'homonymie en ".../Michael_Jackson_".
+    jackson = "https://en.wikipedia.org/wiki/Michael_Jackson_(baseball_player)"
+    texas = "https://en.wikipedia.org/wiki/Paris,_Texas"
+
+    assert extract_cited_urls(f"Joueur [{jackson}]. Ville [{texas}].") == {jackson, texas}
+
+
+def test_extraction_retire_la_ponctuation_de_la_phrase():
+    report = "(voir https://a.com) et [https://b.com, https://c.com/x_(y)]."
+
+    assert extract_cited_urls(report) == {"https://a.com", "https://b.com", "https://c.com/x_(y)"}
