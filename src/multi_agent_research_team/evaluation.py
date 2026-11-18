@@ -29,7 +29,14 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
-DATASET = Path(__file__).resolve().parents[2] / "evals" / "questions.json"
+EVALS = Path(__file__).resolve().parents[2] / "evals"
+# Chaque version a son fichier et son empreinte (tests) : un chiffre ne se
+# compare qu'à un chiffre mesuré sur le MÊME jeu.
+DATASETS = {
+    "v1": EVALS / "questions.json",
+    "v2-dev": EVALS / "questions_v2_dev.json",
+}
+DATASET = DATASETS["v1"]
 
 EVAL_JUDGE_PROMPT = """Tu es un évaluateur. On te donne une question, le comportement
 attendu d'un bon rapport, et le rapport produit par un système de recherche.
@@ -246,6 +253,7 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description="Évalue l'équipe sur le jeu figé.")
     parser.add_argument("--runs", type=int, default=1, help="passages par question")
+    parser.add_argument("--dataset", choices=sorted(DATASETS), default="v2-dev")
     parser.add_argument("--ids", help="ids séparés par des virgules (défaut : toutes)")
     parser.add_argument("--pause", type=float, default=30, help="secondes entre deux questions")
     parser.add_argument(
@@ -254,7 +262,7 @@ def main() -> None:
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
-    cases = load_cases()
+    cases = load_cases(DATASETS[args.dataset])
     if args.ids:
         wanted = set(args.ids.split(","))
         cases = [c for c in cases if c["id"] in wanted]
@@ -265,7 +273,14 @@ def main() -> None:
     # le biais "Gemini se note lui-même" (même modèle par défaut, faute de mieux).
     judge = make_eval_judge(get_llm(model=os.environ.get("EVAL_JUDGE_MODEL", DEFAULT_MODEL)))
 
-    out = DATASET.parent / "results" / f"run-{datetime.now():%Y%m%d-%H%M%S}.jsonl"
+    out = EVALS / "results" / f"run-{args.dataset}-{datetime.now():%Y%m%d-%H%M%S}.jsonl"
+    # Vu le 18 nov. : passer de DuckDuckGo à Tavily change tout le système
+    # mesuré. Chaque fiche dit donc sur quoi elle a été mesurée.
+    setup = {
+        "dataset": args.dataset,
+        "search_backend": os.environ.get("SEARCH_BACKEND", "ddgs"),
+        "model": llm.model,
+    }
     out.parent.mkdir(exist_ok=True)
     results = []
     total = len(cases) * args.runs
@@ -298,6 +313,7 @@ def main() -> None:
             result = run_case(team, case, judge)
             result["first_error"] = first_error
         result["run"] = i
+        result.update(setup)
         results.append(result)
         # Écrit tout de suite : une interruption ne perd que la fiche en cours.
         with out.open("a", encoding="utf-8") as f:
