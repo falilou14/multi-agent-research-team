@@ -222,6 +222,8 @@ def test_reecriture_recoit_les_reproches_efface_le_verdict_et_compte():
     # Lève la contradiction vue en trace (Ch.4) : "utilise les notes" vs
     # "cette phrase des notes n'est pas appuyée" -> le Rédacteur gardait la phrase.
     assert "même si elle figure dans les notes" in seen
+    # Vu en réel (Ch.6) : le rapport racontait le rejet au lecteur final.
+    assert "ne mentionne jamais la correction" in seen
 
 
 def run_team(team_responses):

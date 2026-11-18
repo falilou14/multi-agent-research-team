@@ -141,7 +141,13 @@ def make_writer_node(llm: BaseChatModel):
                     # obéissait à "utilise les notes" et gardait la phrase.
                     "Le Vérificateur a lu le texte complet des sources : son avis prime sur "
                     "les notes, qui peuvent contenir des erreurs. Supprime chacune de ces "
-                    "affirmations, même si elle figure dans les notes. Ne change pas le reste."
+                    "affirmations, même si elle figure dans les notes. Ne change pas le reste.\n"
+                    # Vu en réel (Ch.6, question NBA) : le rapport final disait
+                    # "l'affirmation initiale ayant été rejetée par le
+                    # Vérificateur" -- le lecteur ne connaît pas notre cuisine.
+                    "Le lecteur ne connaît ni le Vérificateur ni les notes : ne mentionne "
+                    "jamais la correction ni le processus. Si un élément n'a plus rien de "
+                    "sourcé à dire, retire-le entièrement."
                 ),
             ]
         )
