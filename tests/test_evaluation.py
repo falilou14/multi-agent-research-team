@@ -3,6 +3,7 @@ from langchain_core.messages import AIMessage
 
 from multi_agent_research_team.evaluation import (
     aggregate,
+    destructive_rewrite,
     is_quota_exhausted,
     load_cases,
     make_eval_judge,
@@ -162,3 +163,33 @@ def test_run_case_garde_chaque_version_du_rapport_et_les_notes():
 
     assert result["drafts"] == ["v1 sans source", "v2 [https://a.com]"]
     assert result["notes"] == "- Nobel 1921 [https://a.com]"
+
+
+def test_reecriture_destructrice_bonne_reponse_effacee():
+    # Cas réel (18 nov.) : "Senghor" dans le 1er jet, coquille vide à la fin.
+    drafts = ["Le premier président est Senghor [https://a.com].", "## Premier président"]
+    assert destructive_rewrite(drafts, ["Senghor"]) is True
+
+
+def test_reecriture_qui_garde_la_bonne_reponse_n_est_pas_destructrice():
+    drafts = ["Senghor [https://a.com]. Fait faux [https://b.com].", "Senghor [https://a.com]."]
+    assert destructive_rewrite(drafts, ["Senghor"]) is False
+
+
+def test_reecriture_destructrice_non_applicable_est_none():
+    assert destructive_rewrite(["Senghor"], ["Senghor"]) is None  # pas de réécriture
+    assert destructive_rewrite(["a", "b"], []) is None  # pas de mot attendu
+    assert destructive_rewrite(["rien", "Senghor"], ["Senghor"]) is None  # rien à perdre
+
+
+def test_le_bilan_compte_les_reecritures_destructrices():
+    base = {"crashed": False, "family": "f", "status": "approuve", "judge_passed": True,
+            "mentions_ok": True, "searches": 1, "revisions": 1, "duration_s": 1}  # fmt: skip
+    results = [
+        {**base, "destructive_rewrite": True},
+        {**base, "destructive_rewrite": False},
+        {**base, "destructive_rewrite": None},
+        base,  # fiche d'avant le 18 nov. : champ absent
+    ]
+
+    assert aggregate(results)["total"]["destructive"] == (1, 2)

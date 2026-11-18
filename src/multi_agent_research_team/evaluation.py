@@ -81,6 +81,26 @@ def mentions_ok(report: str, must_mention: list[str]) -> bool | None:
     return any(_normalize(word) in normalized for word in must_mention)
 
 
+def destructive_rewrite(drafts: list[str], must_mention: list[str]) -> bool | None:
+    """
+    La boucle de correction a-t-elle EFFACÉ une bonne réponse ? True quand le
+    mot attendu était dans le 1er jet mais n'est plus dans le rapport final.
+
+    Pourquoi (référence Tavily du 18 nov.) : les 5 échecs du juge suivaient
+    tous une réécriture -- fausse alarme du Vérificateur, fait supprimé,
+    coquille vide approuvée. Le tableau croisé ne regarde que l'état FINAL
+    ("approuvé") et les rangeait en "approuve / juge_ko" : invisibles comme
+    fausses alarmes. Cette mesure regarde le CHEMIN.
+
+    None (exclu des taux) : pas de réécriture, pas de mot attendu, ou 1er jet
+    déjà sans la bonne réponse (rien à perdre). Limite : aveugle sur les
+    questions sans mot attendu (introuvables, opinions).
+    """
+    if len(drafts) < 2 or not mentions_ok(drafts[0], must_mention):
+        return None
+    return not mentions_ok(drafts[-1], must_mention)
+
+
 def final_status(state: dict[str, Any]) -> str:
     if state.get("verification_error"):
         return "non_verifie"
@@ -163,6 +183,7 @@ def run_case(
         "searches": state.get("searches", 0),
         "trajectory": [n for n in trajectory if n != "supervisor"],
         "mentions_ok": mentions_ok(report, case["must_mention"]),
+        "destructive_rewrite": destructive_rewrite(drafts, case["must_mention"]),
         # None = pas de juge, ou juge en panne : "non jugé", exclu des taux.
         "judge_passed": judgement.passed if judgement else None,
         "judge_reason": judgement.reason if judgement else None,
@@ -203,6 +224,8 @@ def _summarize(results: list[dict[str, Any]]) -> dict[str, Any]:
         "approved": _ratio([r["status"] == "approuve" for r in ran]),
         "judge_passed": _ratio([r["judge_passed"] for r in ran]),
         "mentions_ok": _ratio([r["mentions_ok"] for r in ran]),
+        # .get : les fiches d'avant le 18 nov. n'ont pas ce champ (cf. --summarize).
+        "destructive": _ratio([r.get("destructive_rewrite") for r in ran]),
         "avg_searches": mean("searches"),
         "avg_revisions": mean("revisions"),
         "avg_duration_s": mean("duration_s"),
@@ -230,17 +253,34 @@ def print_summary(summary: dict[str, Any]) -> None:
     rows = [("TOTAL", summary["total"]), *summary["by_family"].items()]
     print(
         f"\n{'famille':<18}{'plantages':>14}{'approuvés':>14}{'juge OK':>14}{'mots OK':>14}"
-        f"{'rech.':>7}{'réécr.':>7}{'durée':>8}"
+        f"{'réécr. destr.':>15}{'rech.':>7}{'réécr.':>7}{'durée':>8}"
     )
     for name, s in rows:
         print(
             f"{name:<18}{_fmt(s['crashed']):>14}{_fmt(s['approved']):>14}"
             f"{_fmt(s['judge_passed']):>14}{_fmt(s['mentions_ok']):>14}"
+            f"{_fmt(s['destructive']):>15}"
             f"{s['avg_searches'] or 0:>7}{s['avg_revisions'] or 0:>7}{s['avg_duration_s'] or 0:>7}s"
         )
+    print("\n(réécr. destr. = bonne réponse dans le 1er jet, effacée par la correction)")
     print("\nVérificateur x juge :")
     for key, count in summary["total"]["cross"].items():
         print(f"  {key:<28}{count}")
+
+
+def rescore(path: Path) -> list[dict[str, Any]]:
+    """Relit des fiches et recalcule les mesures ajoutées depuis (sans rien relancer)."""
+    records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
+    cases = {}
+    for name, dataset in DATASETS.items():
+        cases[name] = {c["id"]: c for c in load_cases(dataset)}
+    for r in records:
+        if r["crashed"] or "destructive_rewrite" in r:
+            continue
+        # Fiches d'avant l'option --dataset : forcément mesurées sur v1.
+        case = cases[r.get("dataset", "v1")][r["id"]]
+        r["destructive_rewrite"] = destructive_rewrite(r.get("drafts", []), case["must_mention"])
+    return records
 
 
 def main() -> None:
@@ -261,7 +301,13 @@ def main() -> None:
     parser.add_argument(
         "--retry-crashed", action="store_true", help="rejoue une fois une question plantée"
     )
+    parser.add_argument(
+        "--summarize", type=Path, help="n'exécute rien : bilan d'un fichier de fiches existant"
+    )
     args = parser.parse_args()
+    if args.summarize:
+        print_summary(aggregate(rescore(args.summarize)))
+        return
 
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
     cases = load_cases(DATASETS[args.dataset])
