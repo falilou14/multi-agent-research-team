@@ -80,11 +80,33 @@
   .history-list { list-style: none; margin: 0; padding: 0; background: var(--surface); border: 1px solid var(--line);
                   border-radius: var(--radius); overflow: hidden; }
   .history-list li + li { border-top: 1px solid var(--line); }
-  .hist { width: 100%; display: grid; grid-template-columns: 10px 1fr auto; gap: 12px; align-items: center;
+  /* Ligne glissable : la face avant glisse et découvre le fond rouge. */
+  .hrow { position: relative; overflow: hidden; max-height: 90px; transition: max-height .25s ease, opacity .25s ease; }
+  .hrow.removing { max-height: 0; opacity: 0; border-top-color: transparent !important; }
+  .hbg { position: absolute; inset: 0; background: var(--bad); color: #fff; display: flex; align-items: center;
+         justify-content: flex-end; padding-right: 18px; font: 600 .82rem var(--sans); }
+  .hfront { position: relative; display: flex; align-items: center; background: var(--surface);
+            touch-action: pan-y; transition: transform .2s ease; user-select: none; }
+  .hfront.dragging { transition: none; }
+  .hdel { flex: none; width: 30px; height: 30px; margin-right: 8px; border: 0; border-radius: 8px; background: none;
+          color: var(--muted); font-size: 1.15rem; line-height: 1; cursor: pointer; opacity: 0; }
+  .hrow:hover .hdel, .hdel:focus-visible { opacity: 1; }
+  .hdel:hover { color: var(--bad); background: var(--bad-soft); }
+  @media (hover: none) { .hdel { display: none; } } /* tactile : on glisse */
+  .swipe-hint { color: var(--muted); font-size: .76rem; margin: 6px 4px 0; }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 140%); opacity: 0;
+           background: var(--ink); color: var(--bg); border-radius: 10px; padding: 10px 14px; display: flex;
+           gap: 16px; align-items: center; font: 500 .88rem var(--sans); box-shadow: var(--shadow);
+           transition: transform .2s ease, opacity .2s ease; pointer-events: none; z-index: 10;
+           max-width: calc(100% - 32px); }
+  .toast.show { transform: translate(-50%, 0); opacity: 1; pointer-events: auto; }
+  .toast button { border: 0; background: none; color: inherit; font: 700 .88rem var(--sans); cursor: pointer;
+                  text-decoration: underline; text-underline-offset: 3px; padding: 0; }
+  .hist { flex: 1; min-width: 0; display: grid; grid-template-columns: 10px 1fr auto; gap: 12px; align-items: center;
           padding: 10px 14px; border: 0; background: none; color: var(--ink); font: 500 .9rem var(--sans);
           text-align: left; cursor: pointer; }
   .hist:hover { background: var(--surface-2); }
-  .hist[aria-current="true"] { background: var(--accent-soft); }
+  .hfront.current, .hfront.current .hist:hover { background: var(--accent-soft); }
   .hist .q { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hist .when { color: var(--muted); font-size: .78rem; font-weight: 400; white-space: nowrap; }
   .sdot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
@@ -194,7 +216,11 @@
       <button class="link-btn" id="clear-history" type="button">Effacer l'historique</button>
     </div>
     <ul class="history-list" id="history-list"></ul>
+    <p class="swipe-hint">Glisse une ligne vers la gauche pour la supprimer.</p>
   </section>
+  <div class="toast" id="toast" role="status" aria-live="polite">
+    <span>Recherche supprimée</span><button type="button" id="undo">Annuler</button>
+  </div>
 
   <div class="results" id="results" hidden>
     <aside class="side">
@@ -480,18 +506,95 @@ function when(iso) {
   return "à l'instant";
 }
 
+// Suppression différée : la ligne disparaît tout de suite, mais le serveur
+// n'est prévenu qu'après 5 s, sauf "Annuler" (un glissement accidentel arrive vite).
+const UNDO_MS = 5000;
+let pending = null; // { id, li, timer }
+
+function commitDelete() {
+  if (!pending) return;
+  const { id, li, timer } = pending;
+  clearTimeout(timer);
+  pending = null;
+  $("toast").classList.remove("show");
+  // keepalive : la requête part même si l'onglet se ferme entre-temps.
+  fetch("/history/" + id, { method: "DELETE", keepalive: true }).catch(() => {});
+  li.remove();
+  if (!$("history-list").children.length) $("history").hidden = true;
+}
+
+function scheduleDelete(id, li) {
+  commitDelete(); // une seule suppression en attente à la fois
+  li.classList.add("removing");
+  pending = { id, li, timer: setTimeout(commitDelete, UNDO_MS) };
+  $("toast").classList.add("show");
+}
+
+$("undo").addEventListener("click", () => {
+  if (!pending) return;
+  clearTimeout(pending.timer);
+  const { li } = pending;
+  pending = null;
+  li.classList.remove("removing");
+  li.querySelector(".hfront").style.transform = "";
+  $("toast").classList.remove("show");
+});
+window.addEventListener("pagehide", commitDelete);
+
+function makeSwipeable(front, onSwipe) {
+  let startX = null, dx = 0, dragging = false, justDragged = false;
+  front.addEventListener("pointerdown", (e) => { startX = e.clientX; dx = 0; dragging = false; });
+  front.addEventListener("pointermove", (e) => {
+    if (startX === null) return;
+    dx = e.clientX - startX;
+    if (!dragging && Math.abs(dx) > 8) { // seuil : un simple clic ne glisse pas
+      dragging = true;
+      front.setPointerCapture(e.pointerId);
+      front.classList.add("dragging");
+    }
+    if (dragging) front.style.transform = `translateX(${Math.min(0, dx)}px)`;
+  });
+  const end = () => {
+    if (startX === null) return;
+    startX = null;
+    if (!dragging) return;
+    front.classList.remove("dragging");
+    justDragged = true;
+    setTimeout(() => { justDragged = false; }, 0);
+    if (-dx > front.offsetWidth * 0.35) {
+      front.style.transform = "translateX(-100%)";
+      onSwipe();
+    } else {
+      front.style.transform = ""; // pas assez loin : la ligne revient
+    }
+  };
+  front.addEventListener("pointerup", end);
+  front.addEventListener("pointercancel", end);
+  // Un glissement ne doit pas aussi "ouvrir" la recherche au relâchement.
+  front.addEventListener("click", (e) => { if (justDragged) { e.stopPropagation(); e.preventDefault(); } }, true);
+}
+
 async function loadHistory(currentId) {
   let items = [];
   try { items = (await (await fetch("/history")).json()).items; } catch { return; }
+  if (pending) items = items.filter((item) => item.id !== pending.id);
   $("history").hidden = !items.length;
   $("history-list").replaceChildren(...items.slice(0, 8).map((item) => {
-    const li = el("li");
+    const li = el("li", "hrow");
+    const front = el("div", "hfront");
     const btn = el("button", "hist");
     btn.type = "button";
-    if (item.id === currentId) btn.setAttribute("aria-current", "true");
+    if (item.id === currentId) { btn.setAttribute("aria-current", "true"); front.classList.add("current"); }
     btn.append(el("span", "sdot " + item.status), el("span", "q", item.question), el("span", "when", when(item.created_at)));
     btn.addEventListener("click", () => openSaved(item.id));
-    li.append(btn);
+    const del = el("button", "hdel", "×");
+    del.type = "button";
+    del.title = "Supprimer cette recherche";
+    del.setAttribute("aria-label", "Supprimer : " + item.question);
+    del.addEventListener("click", () => scheduleDelete(item.id, li));
+    front.append(btn, del);
+    makeSwipeable(front, () => scheduleDelete(item.id, li));
+    li.append(el("div", "hbg", "Supprimer"), front);
     return li;
   }));
 }
@@ -515,6 +618,7 @@ async function openSaved(id) {
 
 $("clear-history").addEventListener("click", async () => {
   if (!confirm("Effacer tout ton historique de recherches ?")) return;
+  commitDelete();
   await fetch("/history", { method: "DELETE" });
   loadHistory();
 });

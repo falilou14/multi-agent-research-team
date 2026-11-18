@@ -226,3 +226,15 @@ def test_une_base_en_panne_ne_fait_pas_perdre_la_reponse():
     done = events_of(client.post("/ask", json={"question": "q ?"}))[-1]
 
     assert done["status"] == "approved" and done["history_id"] is None
+
+
+def test_supprimer_une_seule_recherche_via_l_api(tmp_path):
+    history = History(tmp_path / "h.db")
+    alice = TestClient(create_app(FakeTeam(HAPPY), history=history))
+    bob = TestClient(create_app(FakeTeam(HAPPY), history=history))
+    first = events_of(alice.post("/ask", json={"question": "une ?"}))[-1]["history_id"]
+    second = events_of(alice.post("/ask", json={"question": "deux ?"}))[-1]["history_id"]
+
+    assert bob.delete(f"/history/{first}").status_code == 404  # pas la sienne
+    assert alice.delete(f"/history/{first}").status_code == 204
+    assert [i["id"] for i in alice.get("/history").json()["items"]] == [second]

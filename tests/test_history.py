@@ -64,3 +64,18 @@ def test_l_historique_survit_a_un_redemarrage(tmp_path):
 
     # Nouvel objet = serveur redémarré : les données sont dans le fichier.
     assert History(tmp_path / "h.db").get("alice", search_id) is not None
+
+
+def test_supprimer_une_recherche_ne_touche_pas_aux_autres(history):
+    keep, drop = save(history, "alice", question="garder"), save(history, "alice", question="jeter")
+
+    assert history.delete("alice", drop) is True
+    assert [i["question"] for i in history.list("alice")] == ["garder"]
+    assert history.get("alice", keep) is not None
+
+
+def test_on_ne_peut_pas_supprimer_la_recherche_d_un_autre(history):
+    alice_id = save(history, "alice")
+
+    assert history.delete("bob", alice_id) is False
+    assert history.get("alice", alice_id) is not None

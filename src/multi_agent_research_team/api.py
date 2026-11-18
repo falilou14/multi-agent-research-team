@@ -254,6 +254,15 @@ def create_app(
             history.clear(visitor)  # droit à l'effacement (RGPD)
         return Response(status_code=204)
 
+    @app.delete("/history/{search_id}", status_code=204)
+    def delete_history_item(search_id: int, http: Request) -> Response:
+        visitor = visitor_of(http)
+        deleted = history.delete(visitor, search_id) if history and visitor else False
+        if not deleted:
+            # Même réponse pour "n'existe pas" et "pas à toi" (comme pour la lecture).
+            raise HTTPException(status_code=404, detail="Recherche introuvable.")
+        return Response(status_code=204)
+
     return app
 
 

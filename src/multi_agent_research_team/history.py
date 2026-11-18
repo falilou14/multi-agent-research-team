@@ -106,6 +106,15 @@ class History:
         item["sources"] = json.loads(item["sources"])
         return item
 
+    def delete(self, visitor: str, search_id: int) -> bool:
+        """Supprime UNE recherche ; False si elle n'existe pas ou n'est pas à lui."""
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM searches WHERE id = ? AND visitor = ?",  # même garde que get()
+                (search_id, visitor),
+            )
+            return cursor.rowcount == 1
+
     def clear(self, visitor: str) -> int:
         with self._connect() as conn:
             return conn.execute("DELETE FROM searches WHERE visitor = ?", (visitor,)).rowcount
