@@ -5,6 +5,7 @@ from multi_agent_research_team.research_agent import build_research_agent
 from multi_agent_research_team.state import Verdict
 from multi_agent_research_team.team import (
     extract_cited_urls,
+    foreign_script_words,
     make_research_node,
     make_verifier_node,
     make_writer_node,
@@ -354,3 +355,34 @@ def test_extraction_retire_la_ponctuation_de_la_phrase():
     report = "(voir https://a.com) et [https://b.com, https://c.com/x_(y)]."
 
     assert extract_cited_urls(report) == {"https://a.com", "https://b.com", "https://c.com/x_(y)"}
+
+
+def test_un_mot_d_un_autre_alphabet_est_detecte():
+    # Cas réel (Ch.6) : "histoire" écrit en arabe dans un titre français.
+    report = "# La capitale de l'Australie et son تاريخ\nCanberra [https://a.com]."
+    assert foreign_script_words(report, "Quelle est la capitale ?") == ["تاريخ"]
+
+
+def test_le_francais_typographique_n_est_pas_signale():
+    report = "L’œuvre « déjà » célèbre, naïveté, Dembélé, Ñ, ʼapostrophe [https://a.com]."
+    assert foreign_script_words(report, "question ?") == []
+
+
+def test_un_alphabet_present_dans_les_notes_est_autorise():
+    # Un nom arabe cité par une source ne doit pas être puni.
+    report = "Le mot تاريخ signifie histoire [https://a.com]."
+    assert foreign_script_words(report, "notes : تاريخ = histoire") == []
+
+
+def test_niveau1_un_mot_etranger_est_rejete_sans_appeler_le_llm():
+    llm = fake_model([])  # un appel ferait échouer le test
+    verifier = make_verifier_node(llm)
+
+    update = verifier(
+        {"question": "Capitale ?", "notes": "- Canberra", "sources": SOURCES,
+         "report": "# Canberra et son تاريخ\nCanberra [https://a.com]"}
+    )  # fmt: skip
+
+    assert update["verdict"].approved is False
+    assert "تاريخ" in update["verdict"].unsupported_claims[0]
+    assert llm.calls == []

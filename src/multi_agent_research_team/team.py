@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+import unicodedata
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
@@ -32,6 +33,8 @@ Règles strictes :
   Ne cite que des URLs présentes dans les notes, jamais une autre.
 - Si les notes ne suffisent pas à répondre à une partie de la question, écris-le
   explicitement au lieu de combler le vide.
+- Rédige entièrement dans la langue de la question : aucun mot d'une autre langue
+  ni d'un autre alphabet, titres compris.
 
 Format : un titre, une courte introduction, puis des sections en Markdown."""
 
@@ -181,6 +184,34 @@ def extract_cited_urls(report: str) -> set[str]:
     return {_clean_url(url) for url in _URL_RE.findall(report)}
 
 
+def _scripts(text: str) -> set[str]:
+    """Alphabets des lettres du texte, d'après leur nom Unicode.
+
+    "ARABIC LETTER TEH" -> ARABIC, "LATIN SMALL LETTER E WITH ACUTE" -> LATIN.
+    MODIFIER exclu : l'apostrophe typographique ʼ est une "lettre" pour Unicode.
+    """
+    found = set()
+    for ch in text:
+        if ch.isalpha():
+            script = unicodedata.name(ch, "UNKNOWN").split()[0]
+            if script not in {"LATIN", "MODIFIER"}:
+                found.add(script)
+    return found
+
+
+def foreign_script_words(report: str, reference: str) -> list[str]:
+    """Mots du rapport écrits dans un alphabet absent de la question et des notes.
+
+    Vu en réel (Ch.6) : "La capitale de l'Australie et son تاريخ" -- "histoire"
+    en arabe, produit par le Rédacteur lui-même (ni les notes ni les sources n'en
+    contenaient) : glissement de langue d'un petit modèle. Comparer à la
+    référence évite de punir un nom en arabe légitimement présent dans les notes.
+    """
+    allowed = _scripts(reference)
+    words = (w.strip(".,;:!?()[]«»\"'") for w in report.split())
+    return sorted({w for w in words if _scripts(w) - allowed})
+
+
 def make_verifier_node(llm: BaseChatModel):
     """
     Vérification en deux niveaux :
@@ -218,6 +249,17 @@ def make_verifier_node(llm: BaseChatModel):
         known = {s["url"] for s in sources}
 
         # --- Niveau 1 : code ---
+        # Hors du rôle du juge LLM ("est-ce sourcé ?") : un mot dans une autre
+        # langue n'est pas une affirmation, il passait donc approuvé.
+        reference = f"{state.get('question', '')}\n{state.get('notes', '')}"
+        foreign = foreign_script_words(report, reference)
+        if foreign:
+            claims = [
+                f"Mot dans une autre langue que celle de la question : « {word} » "
+                "(réécris-le dans la langue de la question)"
+                for word in foreign
+            ]
+            return {"verdict": Verdict(approved=False, unsupported_claims=claims)}
         invented = sorted(cited - known)
         if invented:
             claims = [f"URL citée absente des sources récupérées : {url}" for url in invented]
