@@ -151,6 +151,10 @@ $("ask").addEventListener("submit", async (e) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question: $("question").value }),
     });
+    if (res.status === 429) {
+      const minutes = Math.ceil(Number(res.headers.get("Retry-After") || 60) / 60);
+      throw new Error(`trop de questions, réessaie dans ${minutes} min`);
+    }
     if (!res.ok) throw new Error("HTTP " + res.status);
     // Lecture du flux SSE à la main (EventSource ne fait que du GET).
     const reader = res.body.getReader();

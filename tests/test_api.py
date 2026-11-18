@@ -2,7 +2,7 @@ import json
 
 from fastapi.testclient import TestClient
 
-from multi_agent_research_team.api import create_app
+from multi_agent_research_team.api import RateLimiter, create_app
 from multi_agent_research_team.state import Verdict
 
 SRC = {"url": "https://a.com", "title": "A", "content": "TEXTE BRUT DE LA PAGE"}
@@ -129,3 +129,37 @@ def test_les_titres_sont_nettoyes_des_sauts_de_ligne():
     events = events_of(client.post("/ask", json={"question": "question ?"}))
 
     assert events[0]["sources"][0]["title"] == "Creating – Parliament"
+
+
+class FakeClock:
+    def __init__(self):
+        self.now = 1000.0
+
+    def __call__(self):
+        return self.now
+
+
+def test_fenetre_glissante_refuse_puis_oublie_les_vieilles_questions():
+    clock = FakeClock()
+    limiter = RateLimiter(max_requests=2, window_s=3600, clock=clock)
+
+    assert limiter.check("ip") is None
+    clock.now += 600
+    assert limiter.check("ip") is None
+    assert limiter.check("ip") == 3000  # libre quand la 1re (t=1000) expire
+    assert limiter.check("autre-ip") is None  # chaque visiteur a son budget
+
+    clock.now += 3000  # 1re question vieille d'une heure : oubliée
+    assert limiter.check("ip") is None
+
+
+def test_au_dela_du_plafond_429_sans_lancer_l_equipe():
+    team = FakeTeam(HAPPY)
+    client = TestClient(create_app(team, RateLimiter(max_requests=1, clock=FakeClock())))
+
+    assert client.post("/ask", json={"question": "question ?"}).status_code == 200
+    refused = client.post("/ask", json={"question": "question ?"})
+
+    assert refused.status_code == 429
+    assert refused.headers["Retry-After"] == "3600"
+    assert team.calls == 1  # le refus n'a rien coûté

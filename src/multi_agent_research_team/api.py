@@ -11,17 +11,60 @@ TeamState ne doit pas casser l'interface.
 
 import json
 import logging
-from collections.abc import Iterator
+import math
+import threading
+import time
+from collections import defaultdict, deque
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
 INDEX_HTML = Path(__file__).parent / "static" / "index.html"
+
+# Budget par visiteur. Une question ~ 2 crédits Tavily + 4-6 appels Gemini ;
+# palier gratuit Tavily ~ 1000 crédits/mois (~33/jour) : sans plafond, un seul
+# script épuise le mois en quelques minutes et l'appli meurt pour tous.
+MAX_QUESTIONS_PER_WINDOW = 10
+WINDOW_S = 3600.0
+
+
+class RateLimiter:
+    """Fenêtre glissante par clé (IP) : au plus `max_requests` sur `window_s`.
+
+    En mémoire : remis à zéro au redémarrage et propre à UN processus (plusieurs
+    workers ou serveurs -> il faudrait un magasin partagé comme Redis).
+    """
+
+    def __init__(
+        self,
+        max_requests: int = MAX_QUESTIONS_PER_WINDOW,
+        window_s: float = WINDOW_S,
+        clock: Callable[[], float] = time.monotonic,  # injectable : tests sans attendre
+    ):
+        self.max_requests, self.window_s, self.clock = max_requests, window_s, clock
+        self.hits: dict[str, deque[float]] = defaultdict(deque)
+        # Les routes synchrones de FastAPI tournent dans un pool de threads :
+        # deux requêtes simultanées de la même IP ne doivent pas passer toutes
+        # les deux sur la dernière place libre.
+        self.lock = threading.Lock()
+
+    def check(self, key: str) -> float | None:
+        """None = autorisé (et compté) ; sinon secondes à attendre."""
+        with self.lock:
+            now = self.clock()
+            hits = self.hits[key]
+            while hits and hits[0] <= now - self.window_s:
+                hits.popleft()  # plus vieux qu'une fenêtre : oublié
+            if len(hits) >= self.max_requests:
+                return hits[0] + self.window_s - now  # libéré quand le plus vieux expire
+            hits.append(now)
+            return None
 
 
 class AskRequest(BaseModel):
@@ -82,8 +125,9 @@ def sse(event: dict[str, Any]) -> str:
     return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
 
-def create_app(team: Any) -> FastAPI:
+def create_app(team: Any, limiter: RateLimiter | None = None) -> FastAPI:
     app = FastAPI(title="Équipe de recherche multi-agents")
+    limiter = limiter or RateLimiter()
 
     @app.get("/", include_in_schema=False)
     def index() -> FileResponse:
@@ -97,7 +141,19 @@ def create_app(team: Any) -> FastAPI:
         return {"status": "ok"}
 
     @app.post("/ask")
-    def ask(request: AskRequest) -> StreamingResponse:
+    def ask(request: AskRequest, http: Request) -> StreamingResponse:
+        # AVANT de lancer l'équipe : un refus ne coûte rien. Ici le code HTTP
+        # n'est pas encore parti, donc un vrai 429 est possible (pas un événement).
+        # Limite connue : derrière un proxy, toutes les requêtes ont l'IP du proxy.
+        ip = http.client.host if http.client else "inconnu"
+        retry_after = limiter.check(ip)
+        if retry_after is not None:
+            raise HTTPException(
+                status_code=429,
+                detail="Trop de questions : réessaie plus tard.",
+                headers={"Retry-After": str(math.ceil(retry_after))},
+            )
+
         def events() -> Iterator[str]:
             state: dict[str, Any] = {"question": request.question}
             try:
