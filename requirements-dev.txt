@@ -7,6 +7,8 @@
 # Tests
 pytest
 pytest-cov
+# Client HTTP utilisé par le TestClient de FastAPI (appels en mémoire, sans réseau)
+httpx
 
 # Lint + formatage (remplace flake8 + isort + black -- un seul outil)
 ruff

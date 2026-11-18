@@ -22,3 +22,8 @@ tavily-python
 # variables d'environnement (LANGCHAIN_TRACING_V2 etc.), le SDK sert pour
 # les cas où on veut logguer explicitement depuis le code.
 langsmith
+
+# API HTTP (Ch.6) -- FastAPI : validation Pydantic des entrées/sorties, doc
+# auto sur /docs, streaming natif. uvicorn = le serveur qui l'exécute.
+fastapi
+uvicorn
