@@ -62,6 +62,34 @@
   .chip { border: 1px solid var(--line); background: var(--surface); color: var(--ink-2);
           border-radius: 999px; padding: 6px 12px; font: 500 .85rem var(--sans); cursor: pointer; }
   .chip:hover { border-color: var(--accent); color: var(--accent); }
+  .lang { display: inline-block; font: 700 .62rem var(--sans); letter-spacing: .04em; color: var(--muted);
+          border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; margin-right: 6px;
+          vertical-align: 1px; }
+  .hint { text-align: center; color: var(--muted); font-size: .82rem; margin: 12px 0 0; }
+
+  /* Historique */
+  .history { max-width: 760px; margin: 28px auto 0; }
+  .history[hidden] { display: none; }
+  .history-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px;
+                  padding: 0 4px; }
+  .history-head h2 { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+                     margin: 0; font-weight: 600; }
+  .link-btn { border: 0; background: none; color: var(--muted); font: 500 .8rem var(--sans); cursor: pointer;
+              padding: 0; text-decoration: underline; text-underline-offset: 2px; }
+  .link-btn:hover { color: var(--bad); }
+  .history-list { list-style: none; margin: 0; padding: 0; background: var(--surface); border: 1px solid var(--line);
+                  border-radius: var(--radius); overflow: hidden; }
+  .history-list li + li { border-top: 1px solid var(--line); }
+  .hist { width: 100%; display: grid; grid-template-columns: 10px 1fr auto; gap: 12px; align-items: center;
+          padding: 10px 14px; border: 0; background: none; color: var(--ink); font: 500 .9rem var(--sans);
+          text-align: left; cursor: pointer; }
+  .hist:hover { background: var(--surface-2); }
+  .hist[aria-current="true"] { background: var(--accent-soft); }
+  .hist .q { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hist .when { color: var(--muted); font-size: .78rem; font-weight: 400; white-space: nowrap; }
+  .sdot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .sdot.approved { background: var(--ok); }
+  .sdot.rejected, .sdot.unverified { background: var(--warn); }
 
   /* Résultats */
   .results { display: grid; gap: 20px; margin-top: 36px; }
@@ -154,9 +182,19 @@
   </form>
   <div class="examples" id="examples">
     <button class="chip" type="button">Quelle est la capitale de l'Australie et depuis quand ?</button>
-    <button class="chip" type="button">Qui a remporté le Ballon d'Or 2025 ?</button>
-    <button class="chip" type="button">Avantages et limites du pattern superviseur multi-agents ?</button>
+    <button class="chip" type="button"><span class="lang">EN</span>Who won the 2025 Ballon d'Or?</button>
+    <button class="chip" type="button">Qui a écrit « Une si longue lettre » ?</button>
+    <button class="chip" type="button"><span class="lang">ES</span>¿Qué es un sistema multiagente?</button>
   </div>
+  <p class="hint">🌐 Pose ta question dans ta langue : le rapport est rédigé dans la même langue.</p>
+
+  <section class="history" id="history" hidden>
+    <div class="history-head">
+      <h2>Recherches récentes</h2>
+      <button class="link-btn" id="clear-history" type="button">Effacer l'historique</button>
+    </div>
+    <ul class="history-list" id="history-list"></ul>
+  </section>
 
   <div class="results" id="results" hidden>
     <aside class="side">
@@ -396,6 +434,7 @@ function handle(ev) {
     showStatus(ev.status);
     renderReport(ev.report);
     renderSources(true);
+    if (ev.history_id) loadHistory(ev.history_id);
   } else if (ev.step === "error") {
     setActive(null); stopTimer();
     showStatus("error", ev.message);
@@ -411,18 +450,16 @@ question.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("ask").requestSubmit(); }
 });
 $("examples").addEventListener("click", (e) => {
-  if (e.target.classList.contains("chip") && !$("go").disabled) {
-    question.value = e.target.textContent; autosize(); $("ask").requestSubmit();
+  const chip = e.target.closest(".chip");
+  if (chip && !$("go").disabled) {
+    // Dernier nœud texte : la question, sans le badge de langue (EN, ES).
+    question.value = chip.lastChild.textContent.trim(); autosize(); $("ask").requestSubmit();
   }
 });
 
-$("ask").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const q = question.value.trim();
-  if (q.length < 3) return;
+function resetResults() {
   if (run) stopTimer();
   run = newRun();
-  $("go").disabled = true;
   $("results").hidden = false;
   $("steps").replaceChildren(); $("status").replaceChildren();
   $("sources").replaceChildren(el("p", "empty", "En attente de la recherche…"));
@@ -431,6 +468,64 @@ $("ask").addEventListener("submit", async (e) => {
   for (let i = 0; i < 4; i++) ph.append(el("div"));
   $("report").replaceChildren(ph);
   $("timer").textContent = "0 s";
+}
+
+// ---------- Historique (stocké côté serveur, filtré par le cookie visiteur) ----------
+const timeAgo = new Intl.RelativeTimeFormat("fr", { numeric: "auto" });
+function when(iso) {
+  const s = (new Date(iso).getTime() - Date.now()) / 1000;
+  for (const [unit, size] of [["day", 86400], ["hour", 3600], ["minute", 60]]) {
+    if (Math.abs(s) >= size) return timeAgo.format(Math.round(s / size), unit);
+  }
+  return "à l'instant";
+}
+
+async function loadHistory(currentId) {
+  let items = [];
+  try { items = (await (await fetch("/history")).json()).items; } catch { return; }
+  $("history").hidden = !items.length;
+  $("history-list").replaceChildren(...items.slice(0, 8).map((item) => {
+    const li = el("li");
+    const btn = el("button", "hist");
+    btn.type = "button";
+    if (item.id === currentId) btn.setAttribute("aria-current", "true");
+    btn.append(el("span", "sdot " + item.status), el("span", "q", item.question), el("span", "when", when(item.created_at)));
+    btn.addEventListener("click", () => openSaved(item.id));
+    li.append(btn);
+    return li;
+  }));
+}
+
+async function openSaved(id) {
+  if ($("go").disabled) return; // une recherche est en cours
+  const res = await fetch("/history/" + id);
+  if (!res.ok) return;
+  const item = await res.json();
+  resetResults();
+  question.value = item.question; autosize();
+  item.sources.forEach((s) => { run.allSources.push(s.url); run.titles.set(s.url, s.title); });
+  const date = new Date(item.created_at).toLocaleString("fr-FR", { dateStyle: "medium", timeStyle: "short" });
+  addStep("", "↺", "Rechargé depuis l'historique",
+          `${date} · ${item.revisions} réécriture(s)`);
+  $("timer").textContent = Math.round(item.duration_s) + " s";
+  handle({ step: "done", status: item.status, report: item.report });
+  loadHistory(id);
+  $("results").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+$("clear-history").addEventListener("click", async () => {
+  if (!confirm("Effacer tout ton historique de recherches ?")) return;
+  await fetch("/history", { method: "DELETE" });
+  loadHistory();
+});
+loadHistory();
+
+$("ask").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const q = question.value.trim();
+  if (q.length < 3) return;
+  resetResults();
+  $("go").disabled = true;
   run.timer = setInterval(() => {
     $("timer").textContent = Math.round((Date.now() - run.started) / 1000) + " s";
   }, 1000);
