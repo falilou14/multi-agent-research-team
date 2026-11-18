@@ -26,3 +26,6 @@ build/
 
 # Résultats bruts des lancements d'évaluation (rapports complets, régénérables)
 evals/results/
+
+# Historique des recherches (données personnelles : jamais dans git)
+data/

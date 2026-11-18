@@ -3,6 +3,7 @@ import json
 from fastapi.testclient import TestClient
 
 from multi_agent_research_team.api import RateLimiter, create_app
+from multi_agent_research_team.history import History
 from multi_agent_research_team.state import Verdict
 
 SRC = {"url": "https://a.com", "title": "A", "content": "TEXTE BRUT DE LA PAGE"}
@@ -59,6 +60,7 @@ def test_ask_diffuse_la_trajectoire_puis_le_rapport():
         "status": "approved",
         "report": "Rapport [https://a.com]",
         "revisions": 0,
+        "history_id": None,  # pas de base dans ce test
     }
 
 
@@ -163,3 +165,64 @@ def test_au_dela_du_plafond_429_sans_lancer_l_equipe():
     assert refused.status_code == 429
     assert refused.headers["Retry-After"] == "3600"
     assert team.calls == 1  # le refus n'a rien coûté
+
+
+def test_la_recherche_est_enregistree_et_relisible(tmp_path):
+    client = TestClient(create_app(FakeTeam(HAPPY), history=History(tmp_path / "h.db")))
+
+    done = events_of(client.post("/ask", json={"question": "Capitale ?"}))[-1]
+    items = client.get("/history").json()["items"]
+    item = client.get(f"/history/{done['history_id']}").json()
+
+    assert [i["question"] for i in items] == ["Capitale ?"]
+    assert item["report"] == "Rapport [https://a.com]"
+    assert item["sources"] == [{"url": "https://a.com", "title": "A"}]  # jamais le texte brut
+
+
+def test_un_autre_navigateur_ne_voit_pas_mon_historique(tmp_path):
+    history = History(tmp_path / "h.db")
+    alice = TestClient(create_app(FakeTeam(HAPPY), history=history))
+    bob = TestClient(create_app(FakeTeam(HAPPY), history=history))  # autres cookies
+
+    search_id = events_of(alice.post("/ask", json={"question": "secret ?"}))[-1]["history_id"]
+
+    assert bob.get("/history").json() == {"items": []}
+    assert bob.get(f"/history/{search_id}").status_code == 404  # IDOR bloquée
+
+
+def test_le_cookie_visiteur_est_httponly(tmp_path):
+    client = TestClient(create_app(FakeTeam(HAPPY), history=History(tmp_path / "h.db")))
+
+    response = client.post("/ask", json={"question": "q ?"})
+
+    assert "httponly" in response.headers["set-cookie"].lower()
+
+
+def test_un_cookie_trafique_est_ignore(tmp_path):
+    history = History(tmp_path / "h.db")
+    history.add("' OR 1=1 --", question="q", status="approved", report="r",
+                sources=[], revisions=0, duration_s=1)  # fmt: skip
+    client = TestClient(create_app(FakeTeam(HAPPY), history=history))
+    client.cookies.set("visitor", "' OR 1=1 --")
+
+    assert client.get("/history").json() == {"items": []}
+
+
+def test_effacer_mon_historique(tmp_path):
+    client = TestClient(create_app(FakeTeam(HAPPY), history=History(tmp_path / "h.db")))
+    client.post("/ask", json={"question": "q ?"})
+
+    assert client.delete("/history").status_code == 204
+    assert client.get("/history").json() == {"items": []}
+
+
+def test_une_base_en_panne_ne_fait_pas_perdre_la_reponse():
+    class BrokenHistory:
+        def add(self, *args, **kwargs):
+            raise OSError("disque plein")
+
+    client = TestClient(create_app(FakeTeam(HAPPY), history=BrokenHistory()))
+
+    done = events_of(client.post("/ask", json={"question": "q ?"}))[-1]
+
+    assert done["status"] == "approved" and done["history_id"] is None

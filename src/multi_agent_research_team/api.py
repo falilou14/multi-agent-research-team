@@ -12,20 +12,29 @@ TeamState ne doit pas casser l'interface.
 import json
 import logging
 import math
+import os
+import re
 import threading
 import time
+import uuid
 from collections import defaultdict, deque
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
+
+from multi_agent_research_team.history import History
 
 logger = logging.getLogger(__name__)
 
 INDEX_HTML = Path(__file__).parent / "static" / "index.html"
+
+# Cookie du visiteur anonyme : 32 caractères hexadécimaux (uuid4), rien d'autre.
+VISITOR_COOKIE = "visitor"
+_VISITOR_RE = re.compile(r"^[0-9a-f]{32}$")
 
 # Budget par visiteur. Une question ~ 2 crédits Tavily + 4-6 appels Gemini ;
 # palier gratuit Tavily ~ 1000 crédits/mois (~33/jour) : sans plafond, un seul
@@ -73,6 +82,11 @@ class AskRequest(BaseModel):
     question: str = Field(min_length=3, max_length=500)
 
 
+def public_sources(sources: list[dict[str, Any]]) -> list[dict[str, str]]:
+    # Lien + titre nettoyé (vu en réel : "…\r\n        \r\n – Parliament").
+    return [{"url": s["url"], "title": " ".join(s.get("title", "").split())} for s in sources]
+
+
 def to_event(node: str, update: dict[str, Any]) -> dict[str, Any] | None:
     """Traduit une étape interne en événement public (None = rien à montrer)."""
     if node == "research":
@@ -81,10 +95,7 @@ def to_event(node: str, update: dict[str, Any]) -> dict[str, Any] | None:
             "searches": update.get("searches", 0),
             # Lien + titre seulement : jamais le texte brut des pages. Titres
             # nettoyés (vu en réel : "…\r\n        \r\n – Parliament of Australia").
-            "sources": [
-                {"url": s["url"], "title": " ".join(s.get("title", "").split())}
-                for s in update.get("sources", [])
-            ],
+            "sources": public_sources(update.get("sources", [])),
         }
     if node == "writer":
         return {"step": "writer", "revisions": update.get("revisions", 0)}
@@ -125,7 +136,16 @@ def sse(event: dict[str, Any]) -> str:
     return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
 
-def create_app(team: Any, limiter: RateLimiter | None = None) -> FastAPI:
+def visitor_of(http: Request) -> str | None:
+    """Identifiant du cookie s'il est bien formé ; un cookie trafiqué est ignoré."""
+    value = http.cookies.get(VISITOR_COOKIE, "")
+    return value if _VISITOR_RE.match(value) else None
+
+
+def create_app(
+    team: Any, limiter: RateLimiter | None = None, history: History | None = None
+) -> FastAPI:
+    """history=None : pas d'historique (tests de l'équipe, ou base désactivée)."""
     app = FastAPI(title="Équipe de recherche multi-agents")
     limiter = limiter or RateLimiter()
 
@@ -154,8 +174,11 @@ def create_app(team: Any, limiter: RateLimiter | None = None) -> FastAPI:
                 headers={"Retry-After": str(math.ceil(retry_after))},
             )
 
+        visitor = visitor_of(http) or uuid.uuid4().hex
+
         def events() -> Iterator[str]:
             state: dict[str, Any] = {"question": request.question}
+            started = time.monotonic()
             try:
                 for step in team.stream(state.copy(), stream_mode="updates"):
                     for node, update in step.items():
@@ -163,7 +186,11 @@ def create_app(team: Any, limiter: RateLimiter | None = None) -> FastAPI:
                         event = to_event(node, update or {})
                         if event:
                             yield sse(event)
-                yield sse(final_event(state))
+                done = final_event(state)
+                # Enregistré AVANT d'envoyer "done" : si l'onglet se ferme juste
+                # après, le générateur n'est plus tiré (expérience du 18 nov.).
+                done["history_id"] = save(visitor, request.question, done, state, started)
+                yield sse(done)
             except Exception as exc:
                 # Le code HTTP 200 est déjà parti au 1er événement : une panne
                 # en cours de route ne peut plus être un 500 -> événement "error".
@@ -173,7 +200,59 @@ def create_app(team: Any, limiter: RateLimiter | None = None) -> FastAPI:
                 logger.exception("Échec de /ask")
                 yield sse({"step": "error", "message": type(exc).__name__})
 
-        return StreamingResponse(events(), media_type="text/event-stream")
+        response = StreamingResponse(events(), media_type="text/event-stream")
+        response.set_cookie(
+            VISITOR_COOKIE,
+            visitor,
+            max_age=365 * 24 * 3600,
+            httponly=True,  # illisible par JavaScript : un script injecté ne le vole pas
+            samesite="lax",
+            # secure=True à activer en production (HTTPS) ; ici localhost en HTTP.
+        )
+        return response
+
+    def save(visitor: str, question: str, done: dict, state: dict, started: float) -> int | None:
+        if history is None:
+            return None
+        try:
+            return history.add(
+                visitor,
+                question=question,
+                status=done["status"],
+                report=done["report"],
+                sources=public_sources(state.get("sources", [])),
+                revisions=done["revisions"],
+                duration_s=time.monotonic() - started,
+            )
+        except Exception:
+            # L'historique est secondaire : une base en panne ne doit pas
+            # faire perdre la réponse que l'utilisateur attend.
+            logger.exception("Historique : enregistrement impossible")
+            return None
+
+    @app.get("/history")
+    def list_history(http: Request) -> dict[str, list]:
+        visitor = visitor_of(http)
+        if history is None or visitor is None:
+            return {"items": []}
+        return {"items": history.list(visitor)}
+
+    @app.get("/history/{search_id}")
+    def get_history(search_id: int, http: Request) -> dict[str, Any]:
+        visitor = visitor_of(http)
+        item = history.get(visitor, search_id) if history and visitor else None
+        if item is None:
+            # 404 aussi pour la recherche d'un AUTRE visiteur : on ne révèle
+            # même pas qu'elle existe.
+            raise HTTPException(status_code=404, detail="Recherche introuvable.")
+        return item
+
+    @app.delete("/history", status_code=204)
+    def clear_history(http: Request) -> Response:
+        visitor = visitor_of(http)
+        if history is not None and visitor is not None:
+            history.clear(visitor)  # droit à l'effacement (RGPD)
+        return Response(status_code=204)
 
     return app
 
@@ -187,4 +266,5 @@ def build_app() -> FastAPI:
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     llm = get_llm()
-    return create_app(build_team(build_research_agent(llm, [make_search_tool()]), llm))
+    team = build_team(build_research_agent(llm, [make_search_tool()]), llm)
+    return create_app(team, history=History(os.environ.get("HISTORY_DB", "data/history.db")))

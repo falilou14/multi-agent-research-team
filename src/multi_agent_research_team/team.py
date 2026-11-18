@@ -125,8 +125,16 @@ def make_writer_node(llm: BaseChatModel):
         task = f"Question : {state['question']}\n\nNotes :\n{state['notes']}"
         verdict = state.get("verdict")
 
+        # Vu en réel (Ch.6) : question en anglais -> rapport en français, malgré
+        # la règle du prompt système (une ligne noyée dans un contexte tout en
+        # français). Répétée en DERNIER, au plus près de la rédaction.
+        language = (
+            f"\n\nRappel : rédige tout le rapport dans la langue de cette question : "
+            f"« {state['question']} »."
+        )
+
         if verdict is None:  # première rédaction
-            response = llm.invoke([SystemMessage(WRITER_PROMPT), HumanMessage(task)])
+            response = llm.invoke([SystemMessage(WRITER_PROMPT), HumanMessage(task + language)])
             return {"report": response.text, "revisions": 0}  # écrit : report, revisions
 
         # Réécriture après un rejet : il reçoit son ancien rapport + les
@@ -150,7 +158,7 @@ def make_writer_node(llm: BaseChatModel):
                     # Vérificateur" -- le lecteur ne connaît pas notre cuisine.
                     "Le lecteur ne connaît ni le Vérificateur ni les notes : ne mentionne "
                     "jamais la correction ni le processus. Si un élément n'a plus rien de "
-                    "sourcé à dire, retire-le entièrement."
+                    "sourcé à dire, retire-le entièrement." + language
                 ),
             ]
         )
