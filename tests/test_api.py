@@ -118,3 +118,14 @@ def test_aucune_source_n_affiche_pas_de_coche_verte():
 
     assert [e["step"] for e in events] == ["research", "no_sources", "done"]
     assert events[-1]["status"] == "no_sources"
+
+
+def test_les_titres_sont_nettoyes_des_sauts_de_ligne():
+    # Titre réel renvoyé par Tavily pour aph.gov.au.
+    src = {"url": "https://aph.gov.au", "title": "Creating\r\n        \r\n     – Parliament"}
+    steps = [{"research": {"notes": "", "sources": [src], "searches": 1}}]
+    client = TestClient(create_app(FakeTeam(steps)))
+
+    events = events_of(client.post("/ask", json={"question": "question ?"}))
+
+    assert events[0]["sources"][0]["title"] == "Creating – Parliament"

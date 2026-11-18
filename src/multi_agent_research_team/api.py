@@ -36,9 +36,11 @@ def to_event(node: str, update: dict[str, Any]) -> dict[str, Any] | None:
         return {
             "step": "research",
             "searches": update.get("searches", 0),
-            # Lien + titre seulement : jamais le texte brut des pages.
+            # Lien + titre seulement : jamais le texte brut des pages. Titres
+            # nettoyés (vu en réel : "…\r\n        \r\n – Parliament of Australia").
             "sources": [
-                {"url": s["url"], "title": s.get("title", "")} for s in update.get("sources", [])
+                {"url": s["url"], "title": " ".join(s.get("title", "").split())}
+                for s in update.get("sources", [])
             ],
         }
     if node == "writer":
