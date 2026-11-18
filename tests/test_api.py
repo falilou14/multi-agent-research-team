@@ -92,3 +92,29 @@ def test_panne_en_cours_de_route_devient_un_evenement_error(caplog):
     # Le détail reste en cuisine : dans les journaux, jamais chez le client.
     assert "AIza-SECRET" not in response.text
     assert "AIza-SECRET" in caplog.text
+
+
+def test_la_page_est_servie_et_n_interprete_jamais_le_html_du_llm():
+    response = TestClient(create_app(team=object())).get("/")
+
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    # Garde-fou XSS : le rapport (texte d'un LLM nourri par le web) ne doit
+    # jamais être interprété comme du HTML.
+    assert "innerHTML" not in response.text
+    assert 'fetch("/ask"' in response.text
+
+
+def test_aucune_source_n_affiche_pas_de_coche_verte():
+    # Bug trouvé en essai réel (DuckDuckGo en panne) : en interne approved=True,
+    # mais l'utilisateur ne doit pas voir "toutes les affirmations sont sourcées".
+    steps = [
+        {"research": {"notes": "", "sources": [], "searches": 3}},
+        {"no_sources": {"report": "Aucune source…", "verdict": Verdict(approved=True)}},
+    ]
+    client = TestClient(create_app(FakeTeam(steps)))
+
+    events = events_of(client.post("/ask", json={"question": "question ?"}))
+
+    assert [e["step"] for e in events] == ["research", "no_sources", "done"]
+    assert events[-1]["status"] == "no_sources"

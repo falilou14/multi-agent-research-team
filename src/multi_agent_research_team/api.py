@@ -12,13 +12,16 @@ TeamState ne doit pas casser l'interface.
 import json
 import logging
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
+
+INDEX_HTML = Path(__file__).parent / "static" / "index.html"
 
 
 class AskRequest(BaseModel):
@@ -55,7 +58,12 @@ def to_event(node: str, update: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def final_event(state: dict[str, Any]) -> dict[str, Any]:
-    if state.get("verification_error"):
+    if not state.get("sources"):
+        # En interne, no_sources pose approved=True (zéro affirmation = rien
+        # de non sourcé). Pour un humain, une coche verte sur une non-réponse
+        # serait trompeuse : le contrat traduit en statut à part (badge neutre).
+        status = "no_sources"
+    elif state.get("verification_error"):
         status = "unverified"
     else:
         status = "approved" if state["verdict"].approved else "rejected"
@@ -74,6 +82,12 @@ def sse(event: dict[str, Any]) -> str:
 
 def create_app(team: Any) -> FastAPI:
     app = FastAPI(title="Équipe de recherche multi-agents")
+
+    @app.get("/", include_in_schema=False)
+    def index() -> FileResponse:
+        # L'interface n'est qu'un client de /ask, servie par la même API
+        # (même origine : pas de CORS à configurer).
+        return FileResponse(INDEX_HTML)
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -104,3 +118,15 @@ def create_app(team: Any) -> FastAPI:
         return StreamingResponse(events(), media_type="text/event-stream")
 
     return app
+
+
+def build_app() -> FastAPI:
+    """Application réelle (Gemini + recherche web), pour uvicorn --factory."""
+    from multi_agent_research_team.llm import get_llm  # charge aussi le .env
+    from multi_agent_research_team.research_agent import build_research_agent
+    from multi_agent_research_team.team import build_team
+    from multi_agent_research_team.tools import make_search_tool
+
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    llm = get_llm()
+    return create_app(build_team(build_research_agent(llm, [make_search_tool()]), llm))

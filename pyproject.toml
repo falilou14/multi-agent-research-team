@@ -11,6 +11,10 @@ requires-python = ">=3.11"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+# La page web doit voyager avec le package (sinon / renvoie 404 une fois installé).
+[tool.setuptools.package-data]
+multi_agent_research_team = ["static/*.html"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

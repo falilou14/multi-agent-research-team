@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Équipe de recherche</title>
+<style>
+  :root { --bg:#f7f7f5; --card:#fff; --ink:#1d1d1b; --muted:#6b6b66; --line:#e2e2dd;
+          --accent:#2f5bd3; --ok:#1f7a45; --warn:#a15c00; --bad:#b3261e; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#141413; --card:#1e1e1c; --ink:#ececea; --muted:#9a9a94; --line:#33332f;
+            --accent:#7b9cff; --ok:#5cc28a; --warn:#e0a24a; --bad:#ff7b72; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font:16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width:760px; margin:0 auto; padding:32px 16px 64px; }
+  h1 { font-size:1.4rem; margin:0 0 4px; }
+  .sub { color:var(--muted); margin:0 0 24px; font-size:.95rem; }
+  form { display:flex; gap:8px; }
+  input { flex:1; min-width:0; padding:10px 12px; font:inherit; color:inherit; background:var(--card);
+          border:1px solid var(--line); border-radius:8px; }
+  button { padding:10px 16px; font:inherit; border:0; border-radius:8px; background:var(--accent);
+           color:#fff; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:wait; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:10px;
+            padding:16px 18px; margin-top:20px; }
+  section[hidden] { display:none; }
+  h2 { font-size:.8rem; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:0 0 10px; }
+  ol { margin:0; padding-left:20px; }
+  li { margin:4px 0; }
+  li small { color:var(--muted); }
+  .badge { display:inline-block; padding:4px 10px; border-radius:999px; font-weight:600; font-size:.9rem;
+           margin-bottom:12px; border:1px solid currentColor; }
+  .approved { color:var(--ok); } .rejected, .unverified { color:var(--warn); } .error { color:var(--bad); }
+  .no_sources { color:var(--muted); }
+  #report { white-space:pre-wrap; overflow-wrap:anywhere; }
+  a { color:var(--accent); }
+  #claims { color:var(--warn); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Équipe de recherche multi-agents</h1>
+  <p class="sub">Recherche → Rédacteur → Vérificateur. Le Vérificateur contrôle que chaque affirmation est étayée par une source citée, pas qu'elle est vraie.</p>
+
+  <form id="ask">
+    <input id="question" name="question" minlength="3" maxlength="500" required
+           placeholder="Ta question…" autocomplete="off">
+    <button id="go">Demander</button>
+  </form>
+
+  <section id="trail-box" hidden>
+    <h2>Trajectoire</h2>
+    <ol id="trail"></ol>
+  </section>
+
+  <section id="result-box" hidden>
+    <h2>Rapport</h2>
+    <div id="badge" class="badge"></div>
+    <div id="report"></div>
+    <ul id="claims"></ul>
+  </section>
+</main>
+
+<script>
+// SÉCURITÉ : le rapport vient d'un LLM nourri par des pages web inconnues.
+// Jamais d'interprétation HTML : uniquement textContent, et des liens
+// fabriqués par NOTRE code, seulement en http(s) (bloque "javascript:").
+const $ = (id) => document.getElementById(id);
+const URL_RE = /https?:\/\/[^\s\[\]<>"]+/g;
+
+const STATUS = {
+  approved:   "✅ Toutes les affirmations sont sourcées",
+  rejected:   "⚠️ Certaines affirmations ne sont pas étayées par les sources",
+  unverified: "⚠️ Non vérifié (vérification impossible)",
+  no_sources: "ℹ️ Aucune source trouvée : pas de réponse",
+};
+
+function addStep(text, detail) {
+  const li = document.createElement("li");
+  li.textContent = text;
+  if (detail) {
+    const small = document.createElement("small");
+    small.textContent = " — " + detail;
+    li.append(small);
+  }
+  $("trail").append(li);
+}
+
+function safeLink(raw) {
+  const url = raw.replace(/[.;:,']+$/, "");
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+  } catch { return null; }
+  const a = document.createElement("a");
+  a.href = url; a.textContent = url;
+  a.target = "_blank"; a.rel = "noopener noreferrer";
+  return [a, raw.slice(url.length)];
+}
+
+function renderReport(text) {
+  const box = $("report");
+  box.replaceChildren();
+  let last = 0;
+  for (const m of text.matchAll(URL_RE)) {
+    box.append(document.createTextNode(text.slice(last, m.index)));
+    const link = safeLink(m[0]);
+    if (link) box.append(link[0], document.createTextNode(link[1]));
+    else box.append(document.createTextNode(m[0]));
+    last = m.index + m[0].length;
+  }
+  box.append(document.createTextNode(text.slice(last)));
+}
+
+function handle(ev) {
+  if (ev.step === "research") {
+    addStep("Recherche", `${ev.searches} recherche(s), ${ev.sources.length} source(s)`);
+  } else if (ev.step === "writer") {
+    addStep(ev.revisions ? `Rédacteur — réécriture ${ev.revisions}` : "Rédacteur — premier jet");
+  } else if (ev.step === "verifier") {
+    const label = { approved: "approuvé", rejected: "rejeté", unverified: "non vérifié" }[ev.status];
+    addStep("Vérificateur", label);
+    $("claims").replaceChildren(...(ev.unsupported_claims || []).map((c) => {
+      const li = document.createElement("li"); li.textContent = "Non étayé : " + c; return li;
+    }));
+  } else if (ev.step === "no_sources") {
+    addStep("Aucune source trouvée", "réponse honnête, rien d'inventé");
+  } else if (ev.step === "done") {
+    $("result-box").hidden = false;
+    $("badge").className = "badge " + ev.status;
+    $("badge").textContent = STATUS[ev.status];
+    renderReport(ev.report);
+  } else if (ev.step === "error") {
+    $("result-box").hidden = false;
+    $("badge").className = "badge error";
+    $("badge").textContent = "❌ Erreur côté serveur (" + ev.message + "). Réessaie plus tard.";
+  }
+}
+
+$("ask").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  $("go").disabled = true;
+  $("trail").replaceChildren(); $("claims").replaceChildren(); $("report").replaceChildren();
+  $("trail-box").hidden = false; $("result-box").hidden = true;
+  addStep("Question envoyée", "une réponse prend de 30 s à quelques minutes");
+  try {
+    const res = await fetch("/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question: $("question").value }),
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    // Lecture du flux SSE à la main (EventSource ne fait que du GET).
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const blocks = buffer.split("\n\n");
+      buffer = blocks.pop(); // dernier morceau peut-être incomplet
+      for (const block of blocks) {
+        if (block.startsWith("data: ")) handle(JSON.parse(block.slice(6)));
+      }
+    }
+  } catch (err) {
+    handle({ step: "error", message: err.message });
+  } finally {
+    $("go").disabled = false;
+  }
+});
+</script>
+</body>
+</html>
