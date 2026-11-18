@@ -10,12 +10,15 @@ TeamState ne doit pas casser l'interface.
 """
 
 import json
+import logging
 from collections.abc import Iterator
 from typing import Any
 
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 
 class AskRequest(BaseModel):
@@ -92,6 +95,10 @@ def create_app(team: Any) -> FastAPI:
             except Exception as exc:
                 # Le code HTTP 200 est déjà parti au 1er événement : une panne
                 # en cours de route ne peut plus être un 500 -> événement "error".
+                # Détail complet (pile, message) dans les journaux du SERVEUR ;
+                # le client ne reçoit que le type : str(exc) peut contenir
+                # projet, quota, chemins, voire une clé d'API dans une URL.
+                logger.exception("Échec de /ask")
                 yield sse({"step": "error", "message": type(exc).__name__})
 
         return StreamingResponse(events(), media_type="text/event-stream")

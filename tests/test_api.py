@@ -80,10 +80,15 @@ def test_question_invalide_rejetee_sans_lancer_l_equipe():
     assert team.calls == 0  # aucun quota dépensé
 
 
-def test_panne_en_cours_de_route_devient_un_evenement_error():
-    client = TestClient(create_app(FakeTeam(HAPPY[:1], error=RuntimeError("boom"))))
+def test_panne_en_cours_de_route_devient_un_evenement_error(caplog):
+    secret = RuntimeError("quota du projet my-project-123, key=AIza-SECRET")
+    client = TestClient(create_app(FakeTeam(HAPPY[:1], error=secret)))
 
-    events = events_of(client.post("/ask", json={"question": "question ?"}))
+    response = client.post("/ask", json={"question": "question ?"})
 
+    events = events_of(response)
     assert [e["step"] for e in events] == ["research", "error"]
     assert events[-1]["message"] == "RuntimeError"
+    # Le détail reste en cuisine : dans les journaux, jamais chez le client.
+    assert "AIza-SECRET" not in response.text
+    assert "AIza-SECRET" in caplog.text
