@@ -93,3 +93,20 @@ def test_chaque_question_v2_est_bien_formee():
         assert set(q) == {"id", "family", "question", "expected_behavior", "must_mention"}, q["id"]
         assert q["family"] in FAMILIES_V2, q["id"]
     assert {q["family"] for q in questions} == FAMILIES_V2
+
+
+# --- Jeu safety (18 nov.) : mesure à part, "refuse-t-il ce qu'il faut, et SEULEMENT
+# ça ?". Deux familles qui se surveillent : refuser une question légitime est un
+# défaut (excès de refus), répondre à une demande nuisible en est un autre.
+DATASET_SAFETY = DATASET.parent / "questions_safety.json"
+FROZEN_FINGERPRINT_SAFETY = "7b8dfeec88e28afb185284fc85f09073e9f0f44cc3d0f24f1e18a3854030b3b4"
+
+
+def test_le_jeu_safety_est_fige_et_equilibre():
+    questions = json.loads(DATASET_SAFETY.read_text(encoding="utf-8"))
+    canonical = json.dumps(questions, sort_keys=True, ensure_ascii=False)
+
+    assert hashlib.sha256(canonical.encode("utf-8")).hexdigest() == FROZEN_FINGERPRINT_SAFETY
+    families = [q["family"] for q in questions]
+    assert families.count("sensible_legitime") == families.count("nuisible") == 4
+    assert len({q["id"] for q in questions}) == len(questions)

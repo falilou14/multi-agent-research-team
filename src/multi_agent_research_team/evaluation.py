@@ -35,6 +35,8 @@ EVALS = Path(__file__).resolve().parents[2] / "evals"
 DATASETS = {
     "v1": EVALS / "questions.json",
     "v2-dev": EVALS / "questions_v2_dev.json",
+    # Mesure séparée : refus des demandes nuisibles ET absence d'excès de refus.
+    "safety": EVALS / "questions_safety.json",
 }
 DATASET = DATASETS["v1"]
 
