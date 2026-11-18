@@ -4,158 +4,448 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Équipe de recherche</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap" rel="stylesheet">
 <style>
-  :root { --bg:#f7f7f5; --card:#fff; --ink:#1d1d1b; --muted:#6b6b66; --line:#e2e2dd;
-          --accent:#2f5bd3; --ok:#1f7a45; --warn:#a15c00; --bad:#b3261e; }
+  :root {
+    --bg: #f5f5f2; --surface: #ffffff; --surface-2: #fafaf8; --ink: #1b1b19; --ink-2: #4a4a45;
+    --muted: #7a7a73; --line: #e6e5df; --accent: #3b5bdb; --accent-soft: #e8edff;
+    --ok: #1e7b4a; --ok-soft: #e3f4ea; --warn: #9a5b00; --warn-soft: #fdf1dc;
+    --bad: #b42318; --bad-soft: #fde8e6; --neutral-soft: #efefea;
+    --research: #2563eb; --writer: #7c3aed; --verifier: #0f8a5f;
+    --shadow: 0 1px 2px rgba(20,20,15,.04), 0 4px 16px rgba(20,20,15,.06);
+    --radius: 14px;
+    --sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --serif: "Source Serif 4", Georgia, serif;
+  }
   @media (prefers-color-scheme: dark) {
-    :root { --bg:#141413; --card:#1e1e1c; --ink:#ececea; --muted:#9a9a94; --line:#33332f;
-            --accent:#7b9cff; --ok:#5cc28a; --warn:#e0a24a; --bad:#ff7b72; }
+    :root {
+      --bg: #121211; --surface: #1b1b19; --surface-2: #20201e; --ink: #ecebe6; --ink-2: #c4c3bc;
+      --muted: #8f8e86; --line: #2f2f2b; --accent: #8ea5ff; --accent-soft: #232a45;
+      --ok: #5fd39a; --ok-soft: #173326; --warn: #f0b45c; --warn-soft: #3a2c14;
+      --bad: #ff8a7e; --bad-soft: #3d1c19; --neutral-soft: #262624;
+      --research: #7aa5ff; --writer: #b794ff; --verifier: #4fd1a1;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 20px rgba(0,0,0,.25);
+    }
   }
   * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--ink);
-         font:16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  main { max-width:760px; margin:0 auto; padding:32px 16px 64px; }
-  h1 { font-size:1.4rem; margin:0 0 4px; }
-  .sub { color:var(--muted); margin:0 0 24px; font-size:.95rem; }
-  form { display:flex; gap:8px; }
-  input { flex:1; min-width:0; padding:10px 12px; font:inherit; color:inherit; background:var(--card);
-          border:1px solid var(--line); border-radius:8px; }
-  button { padding:10px 16px; font:inherit; border:0; border-radius:8px; background:var(--accent);
-           color:#fff; cursor:pointer; }
-  button:disabled { opacity:.5; cursor:wait; }
-  section { background:var(--card); border:1px solid var(--line); border-radius:10px;
-            padding:16px 18px; margin-top:20px; }
-  section[hidden] { display:none; }
-  h2 { font-size:.8rem; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:0 0 10px; }
-  ol { margin:0; padding-left:20px; }
-  li { margin:4px 0; }
-  li small { color:var(--muted); }
-  .badge { display:inline-block; padding:4px 10px; border-radius:999px; font-weight:600; font-size:.9rem;
-           margin-bottom:12px; border:1px solid currentColor; }
-  .approved { color:var(--ok); } .rejected, .unverified { color:var(--warn); } .error { color:var(--bad); }
-  .no_sources { color:var(--muted); }
-  #report { white-space:pre-wrap; overflow-wrap:anywhere; }
-  a { color:var(--accent); }
-  #claims { color:var(--warn); }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.6 var(--sans);
+         -webkit-font-smoothing: antialiased; }
+  a { color: var(--accent); }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 40px 16px 72px; }
+
+  /* En-tête */
+  header { text-align: center; margin-bottom: 28px; }
+  .logo { display: inline-flex; gap: 6px; margin-bottom: 14px; }
+  .logo span { width: 10px; height: 10px; border-radius: 50%; }
+  .logo span:nth-child(1) { background: var(--research); }
+  .logo span:nth-child(2) { background: var(--writer); }
+  .logo span:nth-child(3) { background: var(--verifier); }
+  h1 { font-size: clamp(1.6rem, 3.5vw, 2.2rem); letter-spacing: -.02em; margin: 0 0 8px; font-weight: 700; }
+  .tagline { color: var(--muted); margin: 0 auto; max-width: 560px; }
+
+  /* Zone de question */
+  .ask { max-width: 760px; margin: 0 auto; background: var(--surface); border: 1px solid var(--line);
+         border-radius: var(--radius); box-shadow: var(--shadow); padding: 8px; display: flex; gap: 8px;
+         align-items: flex-end; transition: border-color .15s; }
+  .ask:focus-within { border-color: var(--accent); }
+  textarea { flex: 1; min-width: 0; border: 0; outline: 0; resize: none; background: transparent;
+             color: inherit; font: inherit; font-size: 1.02rem; padding: 10px 10px; max-height: 160px; }
+  button.go { flex: none; border: 0; border-radius: 10px; background: var(--accent); color: #fff;
+              font: 600 .95rem var(--sans); padding: 11px 18px; cursor: pointer;
+              display: inline-flex; align-items: center; gap: 8px; }
+  @media (prefers-color-scheme: dark) { button.go { color: #10121c; } }
+  button.go:disabled { opacity: .55; cursor: progress; }
+  .examples { max-width: 760px; margin: 14px auto 0; display: flex; flex-wrap: wrap; gap: 8px;
+              justify-content: center; }
+  .chip { border: 1px solid var(--line); background: var(--surface); color: var(--ink-2);
+          border-radius: 999px; padding: 6px 12px; font: 500 .85rem var(--sans); cursor: pointer; }
+  .chip:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* Résultats */
+  .results { display: grid; gap: 20px; margin-top: 36px; }
+  .results[hidden] { display: none; }
+  @media (min-width: 960px) { .results { grid-template-columns: 320px 1fr; align-items: start; }
+                              .side { position: sticky; top: 20px; } }
+  .side { display: grid; gap: 20px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+          box-shadow: var(--shadow); padding: 18px 20px; min-width: 0; }
+  .card-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px; }
+  .card-head h2 { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+                  margin: 0; font-weight: 600; }
+  .timer { font: 500 .8rem var(--sans); color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  /* Frise d'étapes */
+  .steps { list-style: none; margin: 0; padding: 0; }
+  .step { display: grid; grid-template-columns: 22px 1fr; gap: 10px; position: relative; padding-bottom: 14px; }
+  .step:not(:last-child)::before { content: ""; position: absolute; left: 10px; top: 24px; bottom: 2px;
+                                   width: 2px; background: var(--line); }
+  .dot { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+         font-size: .7rem; font-weight: 700; color: #fff; background: var(--muted); }
+  .step[data-agent="research"] .dot { background: var(--research); }
+  .step[data-agent="writer"] .dot { background: var(--writer); }
+  .step[data-agent="verifier"] .dot { background: var(--verifier); }
+  .step[data-state="warn"] .dot { background: var(--warn); }
+  .step[data-state="active"] .dot { background: transparent; border: 2px solid var(--accent);
+                                    border-top-color: transparent; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .step[data-state="active"] .dot { animation: none; } }
+  .step-label { font-weight: 600; font-size: .92rem; }
+  .step[data-state="active"] .step-label { color: var(--accent); }
+  .step-detail { color: var(--muted); font-size: .83rem; }
+  .claims { margin: 6px 0 0; padding-left: 16px; color: var(--warn); font-size: .82rem; }
+
+  /* Sources */
+  .sources { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  .source { display: grid; grid-template-columns: 24px 1fr; gap: 10px; align-items: start; }
+  .num { width: 22px; height: 22px; border-radius: 6px; background: var(--accent-soft); color: var(--accent);
+         font: 700 .72rem var(--sans); display: grid; place-items: center; margin-top: 1px; }
+  .source a { color: var(--ink); text-decoration: none; font-weight: 500; font-size: .88rem; line-height: 1.35;
+              display: block; overflow-wrap: anywhere; }
+  .source a:hover { color: var(--accent); }
+  .domain { color: var(--muted); font-size: .78rem; }
+  details.more { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+  details.more summary { cursor: pointer; color: var(--muted); font-size: .84rem; }
+  details.more ul { margin-top: 10px; }
+  .empty { color: var(--muted); font-size: .88rem; margin: 0; }
+
+  /* Rapport */
+  .status { display: flex; gap: 12px; align-items: flex-start; border-radius: 10px; padding: 12px 14px;
+            margin-bottom: 18px; font-size: .9rem; }
+  .status b { display: block; font-size: .95rem; }
+  .status .icon { font-size: 1.1rem; line-height: 1.3; }
+  .status.approved { background: var(--ok-soft); color: var(--ok); }
+  .status.rejected, .status.unverified { background: var(--warn-soft); color: var(--warn); }
+  .status.no_sources { background: var(--neutral-soft); color: var(--ink-2); }
+  .status.error { background: var(--bad-soft); color: var(--bad); }
+  .status span.note { color: var(--ink-2); opacity: .85; }
+  .report { font-family: var(--serif); font-size: 1.06rem; line-height: 1.7; overflow-wrap: anywhere; }
+  .report h2 { font-family: var(--sans); font-size: 1.45rem; letter-spacing: -.015em; line-height: 1.25; margin: 0 0 14px; }
+  .report h3 { font-family: var(--sans); font-size: 1.08rem; margin: 26px 0 8px; }
+  .report h4 { font-family: var(--sans); font-size: .98rem; margin: 20px 0 6px; }
+  .report p { margin: 0 0 14px; }
+  .report ul { margin: 0 0 14px; padding-left: 22px; }
+  .report li { margin: 4px 0; }
+  a.cite { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px;
+           margin: 0 1px; border-radius: 5px; background: var(--accent-soft); color: var(--accent);
+           font: 700 .68rem var(--sans); text-decoration: none; vertical-align: 2px; }
+  a.cite:hover { background: var(--accent); color: #fff; }
+  .placeholder { display: grid; gap: 10px; }
+  .placeholder div { height: 12px; border-radius: 6px; background: var(--neutral-soft); animation: pulse 1.4s ease-in-out infinite; }
+  .placeholder div:nth-child(1) { width: 55%; height: 20px; }
+  .placeholder div:nth-child(3) { width: 92%; } .placeholder div:nth-child(4) { width: 75%; }
+  @keyframes pulse { 50% { opacity: .45; } }
+  footer { text-align: center; color: var(--muted); font-size: .8rem; margin-top: 40px; }
 </style>
 </head>
 <body>
-<main>
-  <h1>Équipe de recherche multi-agents</h1>
-  <p class="sub">Recherche → Rédacteur → Vérificateur. Le Vérificateur contrôle que chaque affirmation est étayée par une source citée, pas qu'elle est vraie.</p>
+<div class="wrap">
+  <header>
+    <div class="logo" aria-hidden="true"><span></span><span></span><span></span></div>
+    <h1>Équipe de recherche</h1>
+    <p class="tagline">Trois agents cherchent, rédigent et vérifient : chaque affirmation du rapport doit être appuyée par une source citée.</p>
+  </header>
 
-  <form id="ask">
-    <input id="question" name="question" minlength="3" maxlength="500" required
-           placeholder="Ta question…" autocomplete="off">
-    <button id="go">Demander</button>
+  <form id="ask" class="ask">
+    <textarea id="question" rows="1" minlength="3" maxlength="500" required
+              placeholder="Pose ta question…" aria-label="Question"></textarea>
+    <button id="go" class="go" type="submit">Rechercher</button>
   </form>
+  <div class="examples" id="examples">
+    <button class="chip" type="button">Quelle est la capitale de l'Australie et depuis quand ?</button>
+    <button class="chip" type="button">Qui a remporté le Ballon d'Or 2025 ?</button>
+    <button class="chip" type="button">Avantages et limites du pattern superviseur multi-agents ?</button>
+  </div>
 
-  <section id="trail-box" hidden>
-    <h2>Trajectoire</h2>
-    <ol id="trail"></ol>
-  </section>
+  <div class="results" id="results" hidden>
+    <aside class="side">
+      <section class="card">
+        <div class="card-head"><h2>Trajectoire</h2><span class="timer" id="timer">0 s</span></div>
+        <ol class="steps" id="steps"></ol>
+      </section>
+      <section class="card">
+        <div class="card-head"><h2>Sources</h2><span class="timer" id="source-count"></span></div>
+        <div id="sources"><p class="empty">En attente de la recherche…</p></div>
+      </section>
+    </aside>
+    <section class="card">
+      <div class="card-head"><h2>Rapport</h2></div>
+      <div id="status"></div>
+      <div class="report" id="report">
+        <div class="placeholder" aria-label="Rapport en préparation"><div></div><div></div><div></div><div></div></div>
+      </div>
+    </section>
+  </div>
 
-  <section id="result-box" hidden>
-    <h2>Rapport</h2>
-    <div id="badge" class="badge"></div>
-    <div id="report"></div>
-    <ul id="claims"></ul>
-  </section>
-</main>
+  <footer>« Sourcé » signifie appuyé par une source citée, pas forcément vrai : clique sur les numéros pour vérifier.</footer>
+</div>
 
 <script>
 // SÉCURITÉ : le rapport vient d'un LLM nourri par des pages web inconnues.
-// Jamais d'interprétation HTML : uniquement textContent, et des liens
-// fabriqués par NOTRE code, seulement en http(s) (bloque "javascript:").
+// Aucune interprétation HTML : chaque élément est fabriqué par NOTRE code
+// (createElement + texte brut), et les liens n'acceptent que http(s).
 const $ = (id) => document.getElementById(id);
-const URL_RE = /https?:\/\/[^\s\[\]<>"]+/g;
-
-const STATUS = {
-  approved:   "✅ Toutes les affirmations sont sourcées",
-  rejected:   "⚠️ Certaines affirmations ne sont pas étayées par les sources",
-  unverified: "⚠️ Non vérifié (vérification impossible)",
-  no_sources: "ℹ️ Aucune source trouvée : pas de réponse",
+const el = (tag, cls, text) => {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  if (text !== undefined) node.textContent = text;
+  return node;
 };
 
-function addStep(text, detail) {
-  const li = document.createElement("li");
-  li.textContent = text;
-  if (detail) {
-    const small = document.createElement("small");
-    small.textContent = " — " + detail;
-    li.append(small);
+const STATUS = {
+  approved:   ["✓", "Toutes les affirmations sont sourcées", "Le Vérificateur a retrouvé chaque affirmation dans la source citée."],
+  rejected:   ["!", "Certaines affirmations ne sont pas étayées", "Le budget de corrections est épuisé : lis ce rapport avec prudence."],
+  unverified: ["!", "Non vérifié", "La vérification n'a pas pu avoir lieu (panne du Vérificateur)."],
+  no_sources: ["i", "Aucune source trouvée", "Plutôt que d'inventer, l'équipe préfère ne pas répondre."],
+  error:      ["×", "Erreur", ""],
+};
+
+// ---------- Liens sûrs ----------
+function cleanUrl(url) {
+  for (;;) {
+    url = url.replace(/[.;:,']+$/, "");
+    const open = (url.match(/\(/g) || []).length, close = (url.match(/\)/g) || []).length;
+    if (url.endsWith(")") && close > open) { url = url.slice(0, -1); continue; }
+    return url;
   }
-  $("trail").append(li);
+}
+function isHttp(url) {
+  try { const p = new URL(url).protocol; return p === "http:" || p === "https:"; }
+  catch { return false; }
+}
+function domainOf(url) {
+  try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; }
+}
+function link(url, cls, text) {
+  const a = el("a", cls, text);
+  a.href = url; a.target = "_blank"; a.rel = "noopener noreferrer";
+  return a;
 }
 
-function safeLink(raw) {
-  const url = raw.replace(/[.;:,']+$/, "");
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
-  } catch { return null; }
-  const a = document.createElement("a");
-  a.href = url; a.textContent = url;
-  a.target = "_blank"; a.rel = "noopener noreferrer";
-  return [a, raw.slice(url.length)];
+// ---------- État d'une exécution ----------
+let run = null;
+function newRun() {
+  return { titles: new Map(), allSources: [], cited: new Map(), started: Date.now(), timer: null };
+}
+function citeNumber(url) {
+  if (!run.cited.has(url)) run.cited.set(url, run.cited.size + 1);
+  return run.cited.get(url);
+}
+
+// ---------- Mini-Markdown sûr : titres, listes, gras, citations ----------
+const INLINE = /\*\*(.+?)\*\*|\[(https?:\/\/[^\s\]]+(?:\s*,\s*https?:\/\/[^\s\]]+)*)\]|(https?:\/\/[^\s\[\]<>"]+)/g;
+
+function renderInline(text, parent) {
+  let last = 0;
+  for (const m of text.matchAll(INLINE)) {
+    parent.append(text.slice(last, m.index)); // chaîne -> nœud texte : jamais interprétée
+    if (m[1] !== undefined) {
+      const strong = el("strong");
+      renderInline(m[1], strong);
+      parent.append(strong);
+    } else if (m[2] !== undefined) {
+      for (const raw of m[2].split(/\s*,\s*(?=https?:)/)) {
+        const url = cleanUrl(raw.trim());
+        if (!isHttp(url)) { parent.append(raw); continue; }
+        const a = link(url, "cite", String(citeNumber(url)));
+        a.title = run.titles.get(url) || domainOf(url);
+        parent.append(a);
+      }
+    } else {
+      const url = cleanUrl(m[3]);
+      if (isHttp(url)) parent.append(link(url, "", domainOf(url)), m[3].slice(url.length));
+      else parent.append(m[3]);
+    }
+    last = m.index + m[0].length;
+  }
+  parent.append(text.slice(last));
 }
 
 function renderReport(text) {
   const box = $("report");
   box.replaceChildren();
-  let last = 0;
-  for (const m of text.matchAll(URL_RE)) {
-    box.append(document.createTextNode(text.slice(last, m.index)));
-    const link = safeLink(m[0]);
-    if (link) box.append(link[0], document.createTextNode(link[1]));
-    else box.append(document.createTextNode(m[0]));
-    last = m.index + m[0].length;
+  let list = null, para = null;
+  for (const line of text.split("\n")) {
+    const t = line.trim();
+    if (!t) { list = null; para = null; continue; }
+    const heading = /^(#{1,4})\s+(.*)$/.exec(t);
+    const item = /^[*-]\s+(.*)$/.exec(t);
+    if (heading) {
+      const h = el(["h2", "h2", "h3", "h4"][heading[1].length - 1]);
+      renderInline(heading[2], h);
+      box.append(h); list = null; para = null;
+    } else if (item) {
+      if (!list) { list = el("ul"); box.append(list); }
+      const li = el("li");
+      renderInline(item[1], li);
+      list.append(li); para = null;
+    } else {
+      if (para) para.append(" ");
+      else { para = el("p"); box.append(para); }
+      renderInline(t, para); list = null;
+    }
   }
-  box.append(document.createTextNode(text.slice(last)));
 }
 
+// ---------- Sources ----------
+function sourceItem(url, number) {
+  const li = el("li", "source");
+  li.append(el("span", "num", number === null ? "·" : String(number)));
+  const body = el("div");
+  body.append(link(url, "", run.titles.get(url) || domainOf(url)), el("div", "domain", domainOf(url)));
+  li.append(body);
+  return li;
+}
+function renderSources(final) {
+  const box = $("sources");
+  box.replaceChildren();
+  if (!run.allSources.length) {
+    box.append(el("p", "empty", "Aucune source."));
+    $("source-count").textContent = "";
+    return;
+  }
+  if (!final) {
+    const ul = el("ul", "sources");
+    run.allSources.forEach((url) => ul.append(sourceItem(url, null)));
+    box.append(ul);
+    $("source-count").textContent = run.allSources.length + " trouvées";
+    return;
+  }
+  const cited = [...run.cited.entries()].filter(([url]) => isHttp(url));
+  const others = run.allSources.filter((url) => !run.cited.has(url));
+  if (cited.length) {
+    const ul = el("ul", "sources");
+    cited.forEach(([url, n]) => ul.append(sourceItem(url, n)));
+    box.append(ul);
+  } else {
+    box.append(el("p", "empty", "Aucune source citée dans le rapport."));
+  }
+  if (others.length) {
+    const details = el("details", "more");
+    details.append(el("summary", "", `${others.length} autre(s) source(s) consultée(s)`));
+    const ul = el("ul", "sources");
+    others.forEach((url) => ul.append(sourceItem(url, null)));
+    details.append(ul);
+    box.append(details);
+  }
+  $("source-count").textContent = `${cited.length} citée(s)`;
+}
+
+// ---------- Frise d'étapes ----------
+function setActive(label) {
+  const current = $("steps").querySelector('[data-state="active"]');
+  if (current) current.remove();
+  if (!label) return;
+  const li = el("li", "step");
+  li.dataset.state = "active";
+  li.append(el("span", "dot"), el("div", "step-label", label));
+  $("steps").append(li);
+}
+function addStep(agent, icon, label, detail, state = "done") {
+  setActive(null);
+  const li = el("li", "step");
+  li.dataset.agent = agent; li.dataset.state = state;
+  const body = el("div");
+  body.append(el("div", "step-label", label));
+  if (detail) body.append(el("div", "step-detail", detail));
+  li.append(el("span", "dot", icon), body);
+  $("steps").append(li);
+  return body;
+}
+
+function showStatus(kind, extra) {
+  const [icon, title, note] = STATUS[kind];
+  const box = el("div", "status " + kind);
+  const text = el("div");
+  text.append(el("b", "", title), el("span", "note", extra || note));
+  box.append(el("span", "icon", icon), text);
+  $("status").replaceChildren(box);
+}
+
+function stopTimer() { clearInterval(run.timer); }
+
+// ---------- Événements du flux ----------
 function handle(ev) {
   if (ev.step === "research") {
-    addStep("Recherche", `${ev.searches} recherche(s), ${ev.sources.length} source(s)`);
+    ev.sources.forEach((s) => {
+      if (!run.titles.has(s.url)) run.allSources.push(s.url);
+      run.titles.set(s.url, s.title);
+    });
+    addStep("research", "R", "Recherche", `${ev.searches} recherche(s) · ${ev.sources.length} source(s)`);
+    renderSources(false);
+    setActive("Rédaction…");
   } else if (ev.step === "writer") {
-    addStep(ev.revisions ? `Rédacteur — réécriture ${ev.revisions}` : "Rédacteur — premier jet");
+    addStep("writer", "W", ev.revisions ? `Réécriture ${ev.revisions}` : "Rédaction", ev.revisions ? "corrige les affirmations rejetées" : "premier jet");
+    setActive("Vérification…");
   } else if (ev.step === "verifier") {
+    const ok = ev.status === "approved";
     const label = { approved: "approuvé", rejected: "rejeté", unverified: "non vérifié" }[ev.status];
-    addStep("Vérificateur", label);
-    $("claims").replaceChildren(...(ev.unsupported_claims || []).map((c) => {
-      const li = document.createElement("li"); li.textContent = "Non étayé : " + c; return li;
-    }));
+    const body = addStep("verifier", ok ? "✓" : "!", "Vérification", label, ok ? "done" : "warn");
+    if (ev.unsupported_claims && ev.unsupported_claims.length) {
+      const ul = el("ul", "claims");
+      ev.unsupported_claims.forEach((c) => ul.append(el("li", "", c)));
+      body.append(ul);
+    }
+    setActive(ok ? "Finalisation…" : "Correction…");
   } else if (ev.step === "no_sources") {
-    addStep("Aucune source trouvée", "réponse honnête, rien d'inventé");
+    addStep("", "∅", "Aucune source", "réponse honnête, rien d'inventé");
   } else if (ev.step === "done") {
-    $("result-box").hidden = false;
-    $("badge").className = "badge " + ev.status;
-    $("badge").textContent = STATUS[ev.status];
+    setActive(null); stopTimer();
+    run.cited.clear();
+    showStatus(ev.status);
     renderReport(ev.report);
+    renderSources(true);
   } else if (ev.step === "error") {
-    $("result-box").hidden = false;
-    $("badge").className = "badge error";
-    $("badge").textContent = "❌ Erreur côté serveur (" + ev.message + "). Réessaie plus tard.";
+    setActive(null); stopTimer();
+    showStatus("error", ev.message);
+    $("report").replaceChildren();
   }
 }
+
+// ---------- Envoi de la question ----------
+const question = $("question");
+function autosize() { question.style.height = "auto"; question.style.height = question.scrollHeight + "px"; }
+question.addEventListener("input", autosize);
+question.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("ask").requestSubmit(); }
+});
+$("examples").addEventListener("click", (e) => {
+  if (e.target.classList.contains("chip") && !$("go").disabled) {
+    question.value = e.target.textContent; autosize(); $("ask").requestSubmit();
+  }
+});
 
 $("ask").addEventListener("submit", async (e) => {
   e.preventDefault();
+  const q = question.value.trim();
+  if (q.length < 3) return;
+  if (run) stopTimer();
+  run = newRun();
   $("go").disabled = true;
-  $("trail").replaceChildren(); $("claims").replaceChildren(); $("report").replaceChildren();
-  $("trail-box").hidden = false; $("result-box").hidden = true;
-  addStep("Question envoyée", "une réponse prend de 30 s à quelques minutes");
+  $("results").hidden = false;
+  $("steps").replaceChildren(); $("status").replaceChildren();
+  $("sources").replaceChildren(el("p", "empty", "En attente de la recherche…"));
+  $("source-count").textContent = "";
+  const ph = el("div", "placeholder");
+  for (let i = 0; i < 4; i++) ph.append(el("div"));
+  $("report").replaceChildren(ph);
+  $("timer").textContent = "0 s";
+  run.timer = setInterval(() => {
+    $("timer").textContent = Math.round((Date.now() - run.started) / 1000) + " s";
+  }, 1000);
+  setActive("Recherche…");
   try {
     const res = await fetch("/ask", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question: $("question").value }),
+      body: JSON.stringify({ question: q }),
     });
     if (res.status === 429) {
       const minutes = Math.ceil(Number(res.headers.get("Retry-After") || 60) / 60);
-      throw new Error(`trop de questions, réessaie dans ${minutes} min`);
+      throw new Error(`Trop de questions : réessaie dans ${minutes} min.`);
     }
-    if (!res.ok) throw new Error("HTTP " + res.status);
+    if (!res.ok) throw new Error("Le serveur a répondu " + res.status + ".");
     // Lecture du flux SSE à la main (EventSource ne fait que du GET).
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -174,6 +464,7 @@ $("ask").addEventListener("submit", async (e) => {
     handle({ step: "error", message: err.message });
   } finally {
     $("go").disabled = false;
+    stopTimer();
   }
 });
 </script>
